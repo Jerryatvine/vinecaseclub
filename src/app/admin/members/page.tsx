@@ -1,12 +1,24 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { Member, MemberRole, MembershipTier } from "@/lib/types/member";
 import {
   getAllMembers,
   updateMemberRole,
   updateMemberTier,
 } from "@/lib/services/member-service";
+
+type MemberRole = "admin" | "member";
+type MembershipTier = "economy" | "premium";
+
+type Member = {
+  id: string;
+  name: string;
+  email: string;
+  role: MemberRole;
+  membership_tier: MembershipTier;
+  user_id?: string | null;
+  created_at?: string | null;
+};
 
 export default function AdminMembersPage() {
   const [members, setMembers] = useState<Member[]>([]);
