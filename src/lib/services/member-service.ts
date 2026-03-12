@@ -1,9 +1,49 @@
 import { createClient } from "@/lib/supabase/client";
-import type { Member, MemberRole, MembershipTier } from "@/lib/types/member";
 
-export async function findMemberByUserId(
-  userId: string
-): Promise<Member | null> {
+export type MemberRole = "admin" | "member";
+export type MembershipTier = "economy" | "premium";
+
+export type Member = {
+  id: string;
+  name: string;
+  email: string;
+  role: MemberRole;
+  membership_tier: MembershipTier;
+  user_id?: string | null;
+  created_at?: string | null;
+};
+
+function getErrorMessage(error: unknown) {
+  if (typeof error === "object" && error !== null) {
+    const maybeError = error as {
+      message?: string;
+      details?: string;
+      hint?: string;
+      code?: string;
+    };
+
+    return [
+      maybeError.message ? `message: ${maybeError.message}` : null,
+      maybeError.details ? `details: ${maybeError.details}` : null,
+      maybeError.hint ? `hint: ${maybeError.hint}` : null,
+      maybeError.code ? `code: ${maybeError.code}` : null,
+    ]
+      .filter(Boolean)
+      .join(" | ");
+  }
+
+  if (typeof error === "string") {
+    return error;
+  }
+
+  return "Unknown error";
+}
+
+function logSupabaseError(label: string, error: unknown) {
+  console.error(label, getErrorMessage(error), error);
+}
+
+export async function findMemberByUserId(userId: string) {
   const supabase = createClient();
 
   const { data, error } = await supabase
@@ -13,120 +53,83 @@ export async function findMemberByUserId(
     .maybeSingle();
 
   if (error) {
-    console.error("findMemberByUserId error:", error);
-    return null;
+    logSupabaseError("Error loading member by user_id:", error);
+    throw new Error(getErrorMessage(error));
   }
 
-  return data as Member | null;
+  return (data ?? null) as Member | null;
 }
 
-export async function findMemberByEmail(email: string): Promise<Member | null> {
+export async function findMemberByEmail(email: string) {
   const supabase = createClient();
+
+  const cleanEmail = email.trim().toLowerCase();
 
   const { data, error } = await supabase
     .from("members")
     .select("*")
-    .eq("email", email.toLowerCase())
+    .eq("email", cleanEmail)
     .maybeSingle();
 
   if (error) {
-    console.error("findMemberByEmail error:", error);
-    return null;
+    logSupabaseError("Error loading member by email:", error);
+    throw new Error(getErrorMessage(error));
   }
 
-  return data as Member | null;
+  return (data ?? null) as Member | null;
 }
 
-export async function getAllMembers(): Promise<Member[]> {
+export async function getAllMembers() {
   const supabase = createClient();
 
   const { data, error } = await supabase
     .from("members")
     .select("*")
-    .order("created_at", { ascending: false });
+    .order("name", { ascending: true });
 
   if (error) {
-    console.error("getAllMembers error:", error);
-    return [];
+    logSupabaseError("Error loading members:", error);
+    throw new Error(getErrorMessage(error));
   }
 
   return (data ?? []) as Member[];
 }
 
-export async function createMember(input: {
-  user_id: string;
-  name: string;
-  email: string;
-  membership_tier: MembershipTier;
-  role?: MemberRole;
-}): Promise<Member | null> {
-  const supabase = createClient();
-
-  const existing = await findMemberByEmail(input.email);
-  if (existing) {
-    throw new Error("An account with that email already exists.");
-  }
-
-  const { data, error } = await supabase
-    .from("members")
-    .insert([
-      {
-        user_id: input.user_id,
-        name: input.name,
-        email: input.email.toLowerCase(),
-        membership_tier: input.membership_tier,
-        role: input.role ?? "member",
-      },
-    ])
-    .select()
-    .maybeSingle();
-
-  if (error) {
-    console.error("createMember error:", error);
-    throw error;
-  }
-
-  return data as Member | null;
-}
-
-export async function updateMemberRole(
-  memberId: string,
-  role: MemberRole
-): Promise<Member | null> {
+export async function updateMemberRole(id: string, role: MemberRole) {
   const supabase = createClient();
 
   const { data, error } = await supabase
     .from("members")
     .update({ role })
-    .eq("id", memberId)
-    .select()
-    .maybeSingle();
+    .eq("id", id)
+    .select("*")
+    .single();
 
   if (error) {
-    console.error("updateMemberRole error:", error);
-    return null;
+    logSupabaseError("Error updating member role:", error);
+    throw new Error(getErrorMessage(error));
   }
 
-  return data as Member | null;
+  return data as Member;
 }
 
 export async function updateMemberTier(
-  memberId: string,
+  id: string,
   membership_tier: MembershipTier
-): Promise<Member | null> {
+) {
   const supabase = createClient();
 
   const { data, error } = await supabase
     .from("members")
     .update({ membership_tier })
-    .eq("id", memberId)
-    .select()
-    .maybeSingle();
+    .eq("id", id)
+    .select("*")
+    .single();
 
   if (error) {
-    console.error("updateMemberTier error:", error);
-    return null;
+    logSupabaseError("Error updating member tier:", error);
+    throw new Error(getErrorMessage(error));
   }
 
-  return data as Member | null;
+  return data as Member;
 }

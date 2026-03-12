@@ -35,7 +35,9 @@ function Card({
   className?: string;
 }) {
   return (
-    <div className={`rounded-3xl border border-stone-200 bg-white shadow-sm ${className}`}>
+    <div
+      className={`rounded-3xl border border-stone-200 bg-white shadow-sm ${className}`}
+    >
       {children}
     </div>
   );
@@ -261,16 +263,20 @@ export default function DashboardPage() {
                   <CaseStatusBadge status={currentCase.status} />
                 </div>
 
-                {currentCase.status === "customizing" && currentCase.finalize_deadline && (
-                  <p className="mb-4 text-sm text-emerald-700">
-                    Customize before{" "}
-                    {new Date(currentCase.finalize_deadline).toLocaleDateString("en-US", {
-                      month: "long",
-                      day: "numeric",
-                      year: "numeric",
-                    })}
-                  </p>
-                )}
+                {currentCase.status === "customizing" &&
+                  currentCase.finalize_deadline && (
+                    <p className="mb-4 text-sm text-emerald-700">
+                      Customize before{" "}
+                      {new Date(currentCase.finalize_deadline).toLocaleDateString(
+                        "en-US",
+                        {
+                          month: "long",
+                          day: "numeric",
+                          year: "numeric",
+                        }
+                      )}
+                    </p>
+                  )}
 
                 {currentCase.status === "ready_for_pickup" && (
                   <div className="mb-4 rounded-2xl border border-green-200 bg-green-50 p-4">
