@@ -23,7 +23,7 @@ type User = {
 type WineCase = {
   id: string;
   quarter: string;
-  case_size?: number;
+  case_size?: number | null;
   status: "draft" | "customizing" | "finalized" | "ready_for_pickup" | "picked_up";
   finalize_deadline?: string | null;
 };
@@ -263,7 +263,7 @@ export default function DashboardPage() {
                       </h2>
                     </div>
                     <p className="text-sm text-stone-500">
-                      {currentCase.quarter} · {currentCase.case_size || 12}-bottle case
+                      {currentCase.quarter} · {(currentCase.case_size ?? 12)}-bottle case
                     </p>
                   </div>
                   <CaseStatusBadge status={currentCase.status} />
