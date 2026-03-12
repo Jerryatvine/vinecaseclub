@@ -113,8 +113,36 @@ export async function getMyNotifications() {
   return ((data ?? []) as NotificationRow[]).map(normalizeNotification);
 }
 
-export async function getUserNotifications() {
-  return getMyNotifications();
+export async function getUserNotifications(email: string) {
+  const supabase = createClient();
+
+  const cleanEmail = email.trim().toLowerCase();
+  if (!cleanEmail) {
+    return [];
+  }
+
+  const { data, error } = await supabase
+    .from("notifications")
+    .select(
+      `
+        id,
+        member_email,
+        title,
+        message,
+        type,
+        is_read,
+        created_date
+      `
+    )
+    .eq("member_email", cleanEmail)
+    .order("created_date", { ascending: false });
+
+  if (error) {
+    logSupabaseError("Error loading user notifications:", error);
+    throw new Error(getErrorMessage(error));
+  }
+
+  return ((data ?? []) as NotificationRow[]).map(normalizeNotification);
 }
 
 export async function getAllNotifications() {
@@ -150,7 +178,7 @@ export async function createNotification(input: NotificationInput) {
     .from("notifications")
     .insert([
       {
-        member_email: input.member_email,
+        member_email: input.member_email.trim().toLowerCase(),
         title: input.title,
         message: input.message,
         type: input.type ?? "general",
@@ -197,7 +225,7 @@ export async function createNotificationsForAllMembers(input: {
   const emails = Array.from(
     new Set(
       (members ?? [])
-        .map((member) => member.email)
+        .map((member) => member.email?.trim().toLowerCase())
         .filter((email): email is string => Boolean(email))
     )
   );
