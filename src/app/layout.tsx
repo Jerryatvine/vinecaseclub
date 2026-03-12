@@ -1,26 +1,21 @@
-"use client";
+import type { Metadata } from "next";
+import "./globals.css";
+import AppShell from "@/components/AppShell";
 
-import { usePathname } from "next/navigation";
-import SidebarNav from "@/components/sidebar-nav";
+export const metadata: Metadata = {
+  title: "Vine and Table Case Club",
+  description: "Wine club dashboard",
+};
 
 export default function RootLayout({
   children,
-}: {
+}: Readonly<{
   children: React.ReactNode;
-}) {
-  const pathname = usePathname();
-
-  const hideSidebar =
-    pathname === "/login" ||
-    pathname === "/signup" ||
-    pathname === "/forgot-password" ||
-    pathname === "/reset-password";
-
+}>) {
   return (
     <html lang="en">
       <body>
-        {!hideSidebar && <SidebarNav />}
-        {children}
+        <AppShell>{children}</AppShell>
       </body>
     </html>
   );
