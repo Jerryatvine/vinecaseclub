@@ -1,44 +1,30 @@
-import { type NextRequest, NextResponse } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 
-function redirectWithCookies(
-  request: NextRequest,
-  response: NextResponse,
-  pathname: string
-) {
-  const url = request.nextUrl.clone();
-  url.pathname = pathname;
-
-  const redirectResponse = NextResponse.redirect(url);
-
-  response.cookies.getAll().forEach((cookie) => {
-    redirectResponse.cookies.set(cookie);
-  });
-
-  return redirectResponse;
-}
-
 export async function middleware(request: NextRequest) {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return NextResponse.redirect(new URL("/login", request.url));
+  }
+
   let response = NextResponse.next({
     request,
   });
 
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return request.cookies.getAll();
-        },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) => {
-            response.cookies.set(name, value, options);
-          });
-        },
+  const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
+    cookies: {
+      getAll() {
+        return request.cookies.getAll();
       },
-    }
-  );
+      setAll(cookiesToSet) {
+        cookiesToSet.forEach(({ name, value, options }) => {
+          response.cookies.set(name, value, options);
+        });
+      },
+    },
+  });
 
   const {
     data: { user },
@@ -52,25 +38,21 @@ export async function middleware(request: NextRequest) {
   const isAdminRoute = pathname.startsWith("/admin");
 
   if (!user && !isPublicRoute) {
-    return redirectWithCookies(request, response, "/login");
+    return NextResponse.redirect(new URL("/login", request.url));
   }
 
   if (user && isPublicRoute) {
-    return redirectWithCookies(request, response, "/");
+    return NextResponse.redirect(new URL("/", request.url));
   }
 
   if (user && isAdminRoute) {
     let role: "admin" | "member" | null = null;
 
-    const { data: memberByUserId, error: userIdError } = await supabase
+    const { data: memberByUserId } = await supabase
       .from("members")
       .select("role")
       .eq("user_id", user.id)
       .maybeSingle();
-
-    if (userIdError) {
-      console.error("Middleware admin lookup by user_id failed:", userIdError);
-    }
 
     if (
       memberByUserId?.role === "admin" ||
@@ -80,15 +62,11 @@ export async function middleware(request: NextRequest) {
     }
 
     if (!role && user.email) {
-      const { data: memberByEmail, error: emailError } = await supabase
+      const { data: memberByEmail } = await supabase
         .from("members")
         .select("role")
         .eq("email", user.email)
         .maybeSingle();
-
-      if (emailError) {
-        console.error("Middleware admin lookup by email failed:", emailError);
-      }
 
       if (
         memberByEmail?.role === "admin" ||
@@ -99,7 +77,7 @@ export async function middleware(request: NextRequest) {
     }
 
     if (role !== "admin") {
-      return redirectWithCookies(request, response, "/");
+      return NextResponse.redirect(new URL("/", request.url));
     }
   }
 
