@@ -9,8 +9,9 @@ export default function LoginPage() {
   const router = useRouter();
   const supabase = createClient();
 
-  const [email, setEmail] = useState("jerry@example.com");
-  const [password, setPassword] = useState("password123");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [remember, setRemember] = useState(false);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -29,6 +30,12 @@ export default function LoginPage() {
       if (error) {
         setError(error.message || "Invalid email or password");
         return;
+      }
+
+      if (remember) {
+        localStorage.setItem("remembered_email", email);
+      } else {
+        localStorage.removeItem("remembered_email");
       }
 
       router.push("/");
@@ -67,6 +74,25 @@ export default function LoginPage() {
             onChange={(e) => setPassword(e.target.value)}
             required
           />
+
+          {/* Remember + Forgot */}
+          <div className="flex items-center justify-between text-sm">
+            <label className="flex items-center gap-2 text-stone-600">
+              <input
+                type="checkbox"
+                checked={remember}
+                onChange={(e) => setRemember(e.target.checked)}
+              />
+              Remember me
+            </label>
+
+            <Link
+              href="/forgot-password"
+              className="text-stone-800 hover:underline"
+            >
+              Forgot password?
+            </Link>
+          </div>
 
           {error && <p className="text-red-500 text-sm">{error}</p>}
 
