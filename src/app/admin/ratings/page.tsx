@@ -196,7 +196,7 @@ export default function AdminRatingsPage() {
           throw error;
         }
 
-        setRatings((data ?? []) as RatingRow[]);
+        setRatings((data ?? []) as unknown as RatingRow[]);
       } catch (err) {
         console.error("Failed to load ratings:", err);
         setError(getErrorMessage(err));
