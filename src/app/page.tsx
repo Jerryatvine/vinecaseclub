@@ -13,18 +13,14 @@ import {
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { getUserCases, type CaseRecord } from "@/lib/services/case-service";
-import { getUserNotifications } from "@/lib/services/notification-service";
+import {
+  getUserNotifications,
+  type NotificationRecord,
+} from "@/lib/services/notification-service";
 
 type User = {
   full_name: string;
   email: string;
-};
-
-type NotificationItem = {
-  id: string;
-  title: string;
-  message: string;
-  is_read: boolean;
 };
 
 function Card({
@@ -88,7 +84,7 @@ export default function DashboardPage() {
 
   const [user, setUser] = useState<User | null>(null);
   const [cases, setCases] = useState<CaseRecord[]>([]);
-  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [notifications, setNotifications] = useState<NotificationRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
