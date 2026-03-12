@@ -1,8 +1,16 @@
-export default function HomePage() {
+export const metadata = {
+  title: "Wine Case Club",
+  description: "Wine club case builder",
+};
+
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
-    <main style={{ padding: "40px", fontFamily: "sans-serif" }}>
-      <h1>Vine and Table Case Club</h1>
-      <p>Homepage route is working.</p>
-    </main>
+    <html lang="en">
+      <body>{children}</body>
+    </html>
   );
 }
