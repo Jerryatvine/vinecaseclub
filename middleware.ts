@@ -1,0 +1,113 @@
+import { type NextRequest, NextResponse } from "next/server";
+import { createServerClient } from "@supabase/ssr";
+
+function redirectWithCookies(
+  request: NextRequest,
+  response: NextResponse,
+  pathname: string
+) {
+  const url = request.nextUrl.clone();
+  url.pathname = pathname;
+
+  const redirectResponse = NextResponse.redirect(url);
+
+  response.cookies.getAll().forEach((cookie) => {
+    redirectResponse.cookies.set(cookie);
+  });
+
+  return redirectResponse;
+}
+
+export async function middleware(request: NextRequest) {
+  let response = NextResponse.next({
+    request,
+  });
+
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return request.cookies.getAll();
+        },
+        setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value, options }) => {
+            response.cookies.set(name, value, options);
+          });
+        },
+      },
+    }
+  );
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  const pathname = request.nextUrl.pathname;
+
+  const isLoginPage = pathname === "/login";
+  const isSignupPage = pathname === "/signup";
+  const isPublicRoute = isLoginPage || isSignupPage;
+  const isAdminRoute = pathname.startsWith("/admin");
+
+  if (!user && !isPublicRoute) {
+    return redirectWithCookies(request, response, "/login");
+  }
+
+  if (user && isPublicRoute) {
+    return redirectWithCookies(request, response, "/");
+  }
+
+  if (user && isAdminRoute) {
+    let role: "admin" | "member" | null = null;
+
+    const { data: memberByUserId, error: userIdError } = await supabase
+      .from("members")
+      .select("role")
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    if (userIdError) {
+      console.error("Middleware admin lookup by user_id failed:", userIdError);
+    }
+
+    if (
+      memberByUserId?.role === "admin" ||
+      memberByUserId?.role === "member"
+    ) {
+      role = memberByUserId.role;
+    }
+
+    if (!role && user.email) {
+      const { data: memberByEmail, error: emailError } = await supabase
+        .from("members")
+        .select("role")
+        .eq("email", user.email)
+        .maybeSingle();
+
+      if (emailError) {
+        console.error("Middleware admin lookup by email failed:", emailError);
+      }
+
+      if (
+        memberByEmail?.role === "admin" ||
+        memberByEmail?.role === "member"
+      ) {
+        role = memberByEmail.role;
+      }
+    }
+
+    if (role !== "admin") {
+      return redirectWithCookies(request, response, "/");
+    }
+  }
+
+  return response;
+}
+
+export const config = {
+  matcher: [
+    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
+  ],
+};
