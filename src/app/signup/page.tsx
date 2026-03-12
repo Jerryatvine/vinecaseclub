@@ -89,15 +89,15 @@ export default function SignupPage() {
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-[#f4f2ef] p-6 text-stone-900">
-      <div className="w-full max-w-md rounded-3xl border border-stone-200 bg-white p-8 text-stone-900 shadow-sm">
-        <h1 className="text-2xl font-bold text-stone-800">Create account</h1>
-        <p className="mt-1 text-sm text-stone-500">
+      <div className="w-full max-w-md rounded-3xl border border-stone-200 bg-white p-8 shadow-sm text-stone-900">
+        <h1 className="text-2xl font-bold text-stone-900">Create account</h1>
+        <p className="mt-1 text-sm text-stone-600">
           Choose your membership tier to get the right wine case.
         </p>
 
         <form onSubmit={handleSubmit} className="mt-6 space-y-4">
           <div>
-            <label className="mb-1 block text-sm font-medium text-stone-700">
+            <label className="mb-1 block text-sm font-medium text-stone-800">
               Full name
             </label>
             <input
@@ -111,7 +111,7 @@ export default function SignupPage() {
           </div>
 
           <div>
-            <label className="mb-1 block text-sm font-medium text-stone-700">
+            <label className="mb-1 block text-sm font-medium text-stone-800">
               Email
             </label>
             <input
@@ -125,7 +125,7 @@ export default function SignupPage() {
           </div>
 
           <div>
-            <label className="mb-1 block text-sm font-medium text-stone-700">
+            <label className="mb-1 block text-sm font-medium text-stone-800">
               Password
             </label>
             <input
@@ -139,7 +139,7 @@ export default function SignupPage() {
           </div>
 
           <div>
-            <label className="mb-1 block text-sm font-medium text-stone-700">
+            <label className="mb-1 block text-sm font-medium text-stone-800">
               Membership tier
             </label>
             <select
@@ -166,9 +166,9 @@ export default function SignupPage() {
           </button>
         </form>
 
-        <p className="mt-6 text-sm text-stone-500">
+        <p className="mt-6 text-sm text-stone-600">
           Already have an account?{" "}
-          <Link href="/login" className="font-medium text-stone-800 underline">
+          <Link href="/login" className="font-medium text-stone-900 underline">
             Sign in
           </Link>
         </p>
