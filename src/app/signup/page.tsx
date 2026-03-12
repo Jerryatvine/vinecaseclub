@@ -2,13 +2,11 @@
 
 import Link from "next/link";
 import { FormEvent, useState } from "react";
-import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
 type MembershipTier = "economy" | "premium";
 
 export default function SignupPage() {
-  const router = useRouter();
   const supabase = createClient();
 
   const [name, setName] = useState("");
@@ -18,6 +16,7 @@ export default function SignupPage() {
     useState<MembershipTier>("economy");
 
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
   const [saving, setSaving] = useState(false);
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
@@ -26,11 +25,22 @@ export default function SignupPage() {
     try {
       setSaving(true);
       setError("");
+      setSuccess("");
 
-      // 1. Create Supabase Auth user
+      const emailRedirectTo =
+        typeof window !== "undefined"
+          ? `${window.location.origin}/login`
+          : undefined;
+
       const { data, error: authError } = await supabase.auth.signUp({
         email,
         password,
+        options: {
+          emailRedirectTo,
+          data: {
+            full_name: name,
+          },
+        },
       });
 
       if (authError) {
@@ -45,10 +55,10 @@ export default function SignupPage() {
         return;
       }
 
-      // 2. Insert profile into members table
       const { error: memberError } = await supabase.from("members").insert([
         {
           id: user.id,
+          user_id: user.id,
           name,
           email,
           membership_tier: membershipTier,
@@ -61,8 +71,14 @@ export default function SignupPage() {
         return;
       }
 
-      // 3. Redirect to login
-      router.push("/login");
+      setSuccess(
+        "Account created. Please check your email and click the confirmation link to sign in."
+      );
+
+      setName("");
+      setEmail("");
+      setPassword("");
+      setMembershipTier("economy");
     } catch (err) {
       console.error(err);
       setError("Could not create account.");
@@ -72,8 +88,8 @@ export default function SignupPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#f4f2ef] flex items-center justify-center p-6">
-      <div className="w-full max-w-md rounded-3xl border border-stone-200 bg-white p-8 shadow-sm">
+    <main className="flex min-h-screen items-center justify-center bg-[#f4f2ef] p-6 text-stone-900">
+      <div className="w-full max-w-md rounded-3xl border border-stone-200 bg-white p-8 text-stone-900 shadow-sm">
         <h1 className="text-2xl font-bold text-stone-800">Create account</h1>
         <p className="mt-1 text-sm text-stone-500">
           Choose your membership tier to get the right wine case.
@@ -86,9 +102,10 @@ export default function SignupPage() {
             </label>
             <input
               type="text"
-              className="w-full rounded-2xl border border-stone-300 px-3 py-2.5 text-sm outline-none"
+              className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-3 py-2.5 text-sm text-stone-900 outline-none placeholder-stone-400 focus:border-[#263330] focus:ring-2 focus:ring-[#263330]/20"
               value={name}
               onChange={(e) => setName(e.target.value)}
+              placeholder="Your full name"
               required
             />
           </div>
@@ -99,9 +116,10 @@ export default function SignupPage() {
             </label>
             <input
               type="email"
-              className="w-full rounded-2xl border border-stone-300 px-3 py-2.5 text-sm outline-none"
+              className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-3 py-2.5 text-sm text-stone-900 outline-none placeholder-stone-400 focus:border-[#263330] focus:ring-2 focus:ring-[#263330]/20"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
+              placeholder="you@example.com"
               required
             />
           </div>
@@ -112,9 +130,10 @@ export default function SignupPage() {
             </label>
             <input
               type="password"
-              className="w-full rounded-2xl border border-stone-300 px-3 py-2.5 text-sm outline-none"
+              className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-3 py-2.5 text-sm text-stone-900 outline-none placeholder-stone-400 focus:border-[#263330] focus:ring-2 focus:ring-[#263330]/20"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              placeholder="Create a password"
               required
             />
           </div>
@@ -128,7 +147,7 @@ export default function SignupPage() {
               onChange={(e) =>
                 setMembershipTier(e.target.value as MembershipTier)
               }
-              className="w-full rounded-2xl border border-stone-300 bg-white px-3 py-2.5 text-sm outline-none"
+              className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-3 py-2.5 text-sm text-stone-900 outline-none focus:border-[#263330] focus:ring-2 focus:ring-[#263330]/20"
             >
               <option value="economy">Economy Case</option>
               <option value="premium">Premium Case</option>
@@ -136,6 +155,7 @@ export default function SignupPage() {
           </div>
 
           {error && <p className="text-sm text-red-600">{error}</p>}
+          {success && <p className="text-sm text-emerald-600">{success}</p>}
 
           <button
             type="submit"
