@@ -12,20 +12,12 @@ import {
   Sparkles,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import { getUserCases } from "@/lib/services/case-service";
+import { getUserCases, type CaseRecord } from "@/lib/services/case-service";
 import { getUserNotifications } from "@/lib/services/notification-service";
 
 type User = {
   full_name: string;
   email: string;
-};
-
-type WineCase = {
-  id: string;
-  quarter: string;
-  case_size?: number | null;
-  status: "draft" | "customizing" | "finalized" | "ready_for_pickup" | "picked_up";
-  finalize_deadline?: string | null;
 };
 
 type NotificationItem = {
@@ -43,7 +35,7 @@ function Card({
   className?: string;
 }) {
   return (
-    <div className={`rounded-3xl bg-white border border-stone-200 shadow-sm ${className}`}>
+    <div className={`rounded-3xl border border-stone-200 bg-white shadow-sm ${className}`}>
       {children}
     </div>
   );
@@ -63,8 +55,8 @@ function Skeleton({ className = "" }: { className?: string }) {
   return <div className={`animate-pulse rounded-2xl bg-stone-200/80 ${className}`} />;
 }
 
-function CaseStatusBadge({ status }: { status: WineCase["status"] }) {
-  const labelMap: Record<WineCase["status"], string> = {
+function CaseStatusBadge({ status }: { status: CaseRecord["status"] }) {
+  const labelMap: Record<CaseRecord["status"], string> = {
     draft: "Draft",
     customizing: "Customizing",
     finalized: "Finalized",
@@ -72,7 +64,7 @@ function CaseStatusBadge({ status }: { status: WineCase["status"] }) {
     picked_up: "Picked Up",
   };
 
-  const colorMap: Record<WineCase["status"], string> = {
+  const colorMap: Record<CaseRecord["status"], string> = {
     draft: "bg-stone-100 text-stone-700",
     customizing: "bg-amber-100 text-amber-800",
     finalized: "bg-blue-100 text-blue-800",
@@ -93,7 +85,7 @@ export default function DashboardPage() {
   const supabase = createClient();
 
   const [user, setUser] = useState<User | null>(null);
-  const [cases, setCases] = useState<WineCase[]>([]);
+  const [cases, setCases] = useState<CaseRecord[]>([]);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -184,14 +176,14 @@ export default function DashboardPage() {
 
   return (
     <main className="min-h-screen bg-[#f4f2ef]">
-      <div className="mx-auto max-w-6xl p-6 lg:p-10 space-y-8">
+      <div className="mx-auto max-w-6xl space-y-8 p-6 lg:p-10">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5 }}
         >
           <p className="text-sm text-stone-500">Welcome back,</p>
-          <h1 className="text-3xl lg:text-5xl font-bold tracking-tight text-stone-800">
+          <h1 className="text-3xl font-bold tracking-tight text-stone-800 lg:text-5xl">
             {user?.full_name || "Member"}
           </h1>
         </motion.div>
@@ -230,7 +222,7 @@ export default function DashboardPage() {
               transition={{ duration: 0.4, delay: i * 0.08 }}
             >
               <Card>
-                <CardContent className="p-5 flex items-center gap-4">
+                <CardContent className="flex items-center gap-4 p-5">
                   <div
                     className={`flex h-12 w-12 items-center justify-center rounded-2xl ${stat.color}`}
                   >
@@ -323,7 +315,7 @@ export default function DashboardPage() {
             <div className="space-y-3">
               {notifications.slice(0, 3).map((notif) => (
                 <Card key={notif.id}>
-                  <CardContent className="p-4 flex items-start gap-3">
+                  <CardContent className="flex items-start gap-3 p-4">
                     <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-stone-100">
                       <Bell className="h-4 w-4 text-stone-700" />
                     </div>
@@ -341,15 +333,13 @@ export default function DashboardPage() {
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Link href="/wine-catalog">
             <Card className="group transition hover:shadow-md">
-              <CardContent className="p-6 flex items-center gap-4">
+              <CardContent className="flex items-center gap-4 p-6">
                 <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-700 transition group-hover:scale-105">
                   <Wine className="h-5 w-5" />
                 </div>
                 <div>
                   <p className="font-semibold text-stone-800">Browse Wine Catalog</p>
-                  <p className="text-xs text-stone-500">
-                    Explore all available wines
-                  </p>
+                  <p className="text-xs text-stone-500">Explore all available wines</p>
                 </div>
                 <ArrowRight className="ml-auto h-5 w-5 text-stone-400" />
               </CardContent>
@@ -358,15 +348,13 @@ export default function DashboardPage() {
 
           <Link href="/rate-wines">
             <Card className="group transition hover:shadow-md">
-              <CardContent className="p-6 flex items-center gap-4">
+              <CardContent className="flex items-center gap-4 p-6">
                 <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-rose-100 text-rose-700 transition group-hover:scale-105">
                   <Star className="h-5 w-5" />
                 </div>
                 <div>
                   <p className="font-semibold text-stone-800">Rate Your Wines</p>
-                  <p className="text-xs text-stone-500">
-                    Share your tasting notes
-                  </p>
+                  <p className="text-xs text-stone-500">Share your tasting notes</p>
                 </div>
                 <ArrowRight className="ml-auto h-5 w-5 text-stone-400" />
               </CardContent>
