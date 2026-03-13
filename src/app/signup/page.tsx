@@ -32,42 +32,20 @@ export default function SignupPage() {
           ? `${window.location.origin}/login`
           : undefined;
 
-      const { data, error: authError } = await supabase.auth.signUp({
+      const { error: authError } = await supabase.auth.signUp({
         email,
         password,
         options: {
           emailRedirectTo,
           data: {
             full_name: name,
+            membership_tier: membershipTier,
           },
         },
       });
 
       if (authError) {
         setError(authError.message);
-        return;
-      }
-
-      const user = data.user;
-
-      if (!user) {
-        setError("Could not create account.");
-        return;
-      }
-
-      const { error: memberError } = await supabase.from("members").insert([
-        {
-          id: user.id,
-          user_id: user.id,
-          name,
-          email,
-          membership_tier: membershipTier,
-          role: "member",
-        },
-      ]);
-
-      if (memberError) {
-        setError(memberError.message);
         return;
       }
 
@@ -89,7 +67,7 @@ export default function SignupPage() {
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-[#f4f2ef] p-6 text-stone-900">
-      <div className="w-full max-w-md rounded-3xl border border-stone-200 bg-white p-8 shadow-sm text-stone-900">
+      <div className="w-full max-w-md rounded-3xl border border-stone-200 bg-white p-8 text-stone-900 shadow-sm">
         <h1 className="text-2xl font-bold text-stone-900">Create account</h1>
         <p className="mt-1 text-sm text-stone-600">
           Choose your membership tier to get the right wine case.
