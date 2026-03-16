@@ -1,7 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Pencil, Plus, Trash2, Wine, PackagePlus, PackageMinus } from "lucide-react";
+import { useEffect, useRef, useState, type ChangeEvent, type DragEvent, type FormEvent } from "react";
+import {
+  ImagePlus,
+  PackageMinus,
+  PackagePlus,
+  Pencil,
+  Plus,
+  Trash2,
+  Upload,
+  Wine,
+  X,
+} from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import {
   createWine,
@@ -86,13 +96,22 @@ function getErrorMessage(error: unknown) {
   return "Unknown error";
 }
 
+function isImageFile(file: File) {
+  return file.type.startsWith("image/");
+}
+
 export default function AdminWinesPage() {
   const [wines, setWines] = useState<WineItem[]>([]);
   const [form, setForm] = useState<WineFormState>(emptyForm);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const [dragActive, setDragActive] = useState(false);
   const [error, setError] = useState("");
+  const [imageError, setImageError] = useState("");
+
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     loadWines();
@@ -115,10 +134,17 @@ export default function AdminWinesPage() {
   function resetForm() {
     setForm(emptyForm);
     setEditingId(null);
+    setImageError("");
+    setDragActive(false);
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
   }
 
   function handleEdit(wine: WineItem) {
     setEditingId(wine.id);
+    setImageError("");
     setForm({
       name: wine.name ?? "",
       winery: wine.winery ?? "",
@@ -174,7 +200,99 @@ export default function AdminWinesPage() {
     }
   }
 
-  async function handleSubmit(e: React.FormEvent) {
+  async function uploadWineImage(file: File) {
+    if (!isImageFile(file)) {
+      setImageError("Please upload an image file.");
+      return;
+    }
+
+    try {
+      setUploadingImage(true);
+      setImageError("");
+      setError("");
+
+      const supabase = createClient();
+      const fileExt = file.name.split(".").pop()?.toLowerCase() || "jpg";
+      const safeName =
+        form.name
+          .trim()
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-+|-+$/g, "") || "wine";
+
+      const filePath = `wines/${safeName}-${Date.now()}.${fileExt}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from("wine-images")
+        .upload(filePath, file, {
+          cacheControl: "3600",
+          upsert: false,
+        });
+
+      if (uploadError) {
+        throw uploadError;
+      }
+
+      const { data } = supabase.storage.from("wine-images").getPublicUrl(filePath);
+
+      if (!data?.publicUrl) {
+        throw new Error("Could not generate image URL.");
+      }
+
+      setForm((prev) => ({
+        ...prev,
+        image_url: data.publicUrl,
+      }));
+    } catch (err) {
+      console.error(err);
+      setImageError(getErrorMessage(err));
+    } finally {
+      setUploadingImage(false);
+    }
+  }
+
+  async function handleFileChange(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    await uploadWineImage(file);
+  }
+
+  async function handleDrop(e: DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(false);
+
+    const file = e.dataTransfer.files?.[0];
+    if (!file) return;
+
+    await uploadWineImage(file);
+  }
+
+  function handleDragOver(e: DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(true);
+  }
+
+  function handleDragLeave(e: DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(false);
+  }
+
+  function clearImage() {
+    setForm((prev) => ({
+      ...prev,
+      image_url: "",
+    }));
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  }
+
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault();
 
     try {
@@ -226,7 +344,7 @@ export default function AdminWinesPage() {
         <div>
           <h1 className="text-3xl font-bold text-stone-800">Manage Wines</h1>
           <p className="mt-2 text-sm text-stone-500">
-            Add wines, edit pricing, and adjust inventory.
+            Add wines, edit pricing, adjust inventory, and upload wine images.
           </p>
         </div>
 
@@ -287,12 +405,88 @@ export default function AdminWinesPage() {
                 onChange={(e) => setForm({ ...form, region: e.target.value })}
               />
 
-              <input
-                className="w-full rounded-2xl border border-stone-300 px-3 py-2.5 text-sm outline-none"
-                placeholder="Image URL"
-                value={form.image_url}
-                onChange={(e) => setForm({ ...form, image_url: e.target.value })}
-              />
+              <div className="space-y-3">
+                <div
+                  onDrop={handleDrop}
+                  onDragOver={handleDragOver}
+                  onDragLeave={handleDragLeave}
+                  className={`rounded-3xl border-2 border-dashed p-5 text-center transition ${
+                    dragActive
+                      ? "border-[#263330] bg-stone-50"
+                      : "border-stone-300 bg-stone-50"
+                  }`}
+                >
+                  <div className="flex flex-col items-center gap-3">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white text-stone-600 shadow-sm">
+                      <Upload className="h-5 w-5" />
+                    </div>
+
+                    <div>
+                      <p className="text-sm font-medium text-stone-800">
+                        Drag and drop a wine image here
+                      </p>
+                      <p className="mt-1 text-xs text-stone-500">
+                        PNG, JPG, WEBP, or GIF
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={uploadingImage}
+                      className="inline-flex items-center gap-2 rounded-2xl border border-stone-300 bg-white px-4 py-2 text-sm font-medium text-stone-700 hover:bg-stone-100 disabled:opacity-50"
+                    >
+                      <ImagePlus className="h-4 w-4" />
+                      {uploadingImage ? "Uploading..." : "Choose Image"}
+                    </button>
+
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      onChange={handleFileChange}
+                      className="hidden"
+                    />
+                  </div>
+                </div>
+
+                {imageError && (
+                  <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                    {imageError}
+                  </div>
+                )}
+
+                <input
+                  className="w-full rounded-2xl border border-stone-300 px-3 py-2.5 text-sm outline-none"
+                  placeholder="Image URL"
+                  value={form.image_url}
+                  onChange={(e) => setForm({ ...form, image_url: e.target.value })}
+                />
+
+                {form.image_url && (
+                  <div className="rounded-3xl border border-stone-200 bg-white p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="overflow-hidden rounded-2xl border border-stone-200 bg-stone-50">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={form.image_url}
+                          alt={form.name || "Wine preview"}
+                          className="h-40 w-full object-cover"
+                        />
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={clearImage}
+                        className="inline-flex items-center gap-2 rounded-2xl border border-stone-300 px-3 py-2 text-sm text-stone-700 hover:bg-stone-50"
+                      >
+                        <X className="h-4 w-4" />
+                        Remove
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
 
               <input
                 type="number"
@@ -344,7 +538,7 @@ export default function AdminWinesPage() {
               <div className="flex gap-3">
                 <button
                   type="submit"
-                  disabled={saving}
+                  disabled={saving || uploadingImage}
                   className="inline-flex items-center gap-2 rounded-2xl bg-[#263330] px-4 py-3 text-sm font-medium text-white disabled:opacity-50"
                 >
                   <Plus className="h-4 w-4" />
@@ -399,8 +593,17 @@ export default function AdminWinesPage() {
                       <tr key={wine.id} className="border-b border-stone-100">
                         <td className="px-3 py-4">
                           <div className="flex items-center gap-3">
-                            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-stone-100 text-stone-600">
-                              <Wine className="h-5 w-5" />
+                            <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-2xl bg-stone-100 text-stone-600">
+                              {wine.image_url ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img
+                                  src={wine.image_url}
+                                  alt={wine.name}
+                                  className="h-full w-full object-cover"
+                                />
+                              ) : (
+                                <Wine className="h-5 w-5" />
+                              )}
                             </div>
                             <div>
                               <p className="font-medium text-stone-800">{wine.name}</p>
@@ -418,6 +621,7 @@ export default function AdminWinesPage() {
                         <td className="px-3 py-4">
                           <div className="flex gap-2">
                             <button
+                              type="button"
                               onClick={() => handleInventoryAdjust(wine, 1)}
                               className="rounded-xl border border-stone-300 p-2 text-emerald-700 hover:bg-emerald-50"
                               title="Add 1 bottle"
@@ -425,6 +629,7 @@ export default function AdminWinesPage() {
                               <PackagePlus className="h-4 w-4" />
                             </button>
                             <button
+                              type="button"
                               onClick={() => handleInventoryAdjust(wine, -1)}
                               className="rounded-xl border border-stone-300 p-2 text-amber-700 hover:bg-amber-50"
                               title="Remove 1 bottle"
@@ -442,12 +647,14 @@ export default function AdminWinesPage() {
                         <td className="px-3 py-4">
                           <div className="flex gap-2">
                             <button
+                              type="button"
                               onClick={() => handleEdit(wine)}
                               className="rounded-xl border border-stone-300 p-2 text-stone-700 hover:bg-stone-50"
                             >
                               <Pencil className="h-4 w-4" />
                             </button>
                             <button
+                              type="button"
                               onClick={() => handleDelete(wine.id)}
                               className="rounded-xl border border-stone-300 p-2 text-red-600 hover:bg-red-50"
                             >
