@@ -20,6 +20,22 @@ type Member = {
   created_at?: string | null;
 };
 
+function formatJoinedDate(dateString?: string | null) {
+  if (!dateString) return "—";
+
+  const date = new Date(dateString);
+
+  if (Number.isNaN(date.getTime())) {
+    return "—";
+  }
+
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  }).format(date);
+}
+
 export default function AdminMembersPage() {
   const [members, setMembers] = useState<Member[]>([]);
   const [loading, setLoading] = useState(true);
@@ -96,7 +112,7 @@ export default function AdminMembersPage() {
       <div className="mx-auto max-w-6xl p-6 lg:p-10">
         <h1 className="text-3xl font-bold text-stone-800">Members</h1>
         <p className="mt-2 text-sm text-stone-500">
-          View member accounts, roles, and case tiers.
+          View member accounts, roles, case tiers, and join dates.
         </p>
 
         {error && (
@@ -111,6 +127,7 @@ export default function AdminMembersPage() {
               <tr className="border-b border-stone-200 text-stone-500">
                 <th className="px-4 py-3 font-medium">Name</th>
                 <th className="px-4 py-3 font-medium">Email</th>
+                <th className="px-4 py-3 font-medium">Joined</th>
                 <th className="px-4 py-3 font-medium">Role</th>
                 <th className="px-4 py-3 font-medium">Membership Tier</th>
               </tr>
@@ -118,13 +135,19 @@ export default function AdminMembersPage() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={4} className="px-4 py-8 text-center text-stone-500">
+                  <td
+                    colSpan={5}
+                    className="px-4 py-8 text-center text-stone-500"
+                  >
                     Loading members...
                   </td>
                 </tr>
               ) : members.length === 0 ? (
                 <tr>
-                  <td colSpan={4} className="px-4 py-8 text-center text-stone-500">
+                  <td
+                    colSpan={5}
+                    className="px-4 py-8 text-center text-stone-500"
+                  >
                     No members found.
                   </td>
                 </tr>
@@ -133,6 +156,9 @@ export default function AdminMembersPage() {
                   <tr key={member.id} className="border-b border-stone-100">
                     <td className="px-4 py-4 text-stone-800">{member.name}</td>
                     <td className="px-4 py-4 text-stone-700">{member.email}</td>
+                    <td className="px-4 py-4 text-stone-700">
+                      {formatJoinedDate(member.created_at)}
+                    </td>
                     <td className="px-4 py-4">
                       <select
                         value={member.role}

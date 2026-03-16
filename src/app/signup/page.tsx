@@ -29,7 +29,7 @@ export default function SignupPage() {
 
       const emailRedirectTo =
         typeof window !== "undefined"
-          ? `${window.location.origin}/login`
+          ? `${window.location.origin}/auth/callback`
           : undefined;
 
       const { error: authError } = await supabase.auth.signUp({
@@ -50,7 +50,7 @@ export default function SignupPage() {
       }
 
       setSuccess(
-        "Account created. Please check your email and click the confirmation link to sign in."
+        "Account created. Please check your email and click the confirmation link to complete signup."
       );
 
       setName("");
