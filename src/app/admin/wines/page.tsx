@@ -1,6 +1,13 @@
 "use client";
 
-import { useEffect, useRef, useState, type ChangeEvent, type DragEvent, type FormEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type DragEvent,
+  type FormEvent,
+} from "react";
 import {
   ImagePlus,
   PackageMinus,
@@ -96,8 +103,22 @@ function getErrorMessage(error: unknown) {
   return "Unknown error";
 }
 
-function isImageFile(file: File) {
-  return file.type.startsWith("image/");
+function isSupportedImageFile(file: File) {
+  const allowedMimeTypes = [
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+    "image/gif",
+  ];
+
+  const lowerName = file.name.toLowerCase();
+
+  const blockedExtensions = [".heic", ".heif"];
+  const isBlockedExtension = blockedExtensions.some((ext) =>
+    lowerName.endsWith(ext)
+  );
+
+  return allowedMimeTypes.includes(file.type) && !isBlockedExtension;
 }
 
 export default function AdminWinesPage() {
@@ -201,8 +222,10 @@ export default function AdminWinesPage() {
   }
 
   async function uploadWineImage(file: File) {
-    if (!isImageFile(file)) {
-      setImageError("Please upload an image file.");
+    if (!isSupportedImageFile(file)) {
+      setImageError(
+        "Please upload a JPG, PNG, WEBP, or GIF image. HEIC images are not supported in the browser."
+      );
       return;
     }
 
@@ -426,7 +449,7 @@ export default function AdminWinesPage() {
                         Drag and drop a wine image here
                       </p>
                       <p className="mt-1 text-xs text-stone-500">
-                        PNG, JPG, WEBP, or GIF
+                        JPG, PNG, WEBP, or GIF
                       </p>
                     </div>
 
@@ -443,7 +466,7 @@ export default function AdminWinesPage() {
                     <input
                       ref={fileInputRef}
                       type="file"
-                      accept="image/*"
+                      accept=".jpg,.jpeg,.png,.webp,.gif,image/jpeg,image/png,image/webp,image/gif"
                       onChange={handleFileChange}
                       className="hidden"
                     />
@@ -467,7 +490,6 @@ export default function AdminWinesPage() {
                   <div className="rounded-3xl border border-stone-200 bg-white p-3">
                     <div className="flex items-start justify-between gap-3">
                       <div className="overflow-hidden rounded-2xl border border-stone-200 bg-stone-50">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
                           src={form.image_url}
                           alt={form.name || "Wine preview"}
@@ -595,7 +617,6 @@ export default function AdminWinesPage() {
                           <div className="flex items-center gap-3">
                             <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-2xl bg-stone-100 text-stone-600">
                               {wine.image_url ? (
-                                // eslint-disable-next-line @next/next/no-img-element
                                 <img
                                   src={wine.image_url}
                                   alt={wine.name}
