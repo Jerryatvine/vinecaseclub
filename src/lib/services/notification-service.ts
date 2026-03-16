@@ -9,6 +9,7 @@ export type NotificationRecord = {
   message: string;
   type: NotificationType;
   is_read: boolean;
+  is_archived: boolean;
   created_at: string;
 };
 
@@ -26,6 +27,7 @@ type NotificationRow = {
   message: string;
   type: NotificationType;
   is_read: boolean;
+  is_archived: boolean;
   created_date: string;
 };
 
@@ -67,6 +69,7 @@ function normalizeNotification(row: NotificationRow): NotificationRecord {
     message: row.message,
     type: row.type,
     is_read: row.is_read,
+    is_archived: row.is_archived,
     created_at: row.created_date,
   };
 }
@@ -99,10 +102,12 @@ export async function getMyNotifications() {
         message,
         type,
         is_read,
+        is_archived,
         created_date
       `
     )
     .eq("member_email", email)
+    .eq("is_archived", false)
     .order("created_date", { ascending: false });
 
   if (error) {
@@ -131,6 +136,7 @@ export async function getUserNotifications(email: string) {
         message,
         type,
         is_read,
+        is_archived,
         created_date
       `
     )
@@ -158,6 +164,7 @@ export async function getAllNotifications() {
         message,
         type,
         is_read,
+        is_archived,
         created_date
       `
     )
@@ -192,6 +199,7 @@ export async function createNotification(input: NotificationInput) {
         message,
         type,
         is_read,
+        is_archived,
         created_date
       `
     )
@@ -252,6 +260,7 @@ export async function createNotificationsForAllMembers(input: {
         message,
         type,
         is_read,
+        is_archived,
         created_date
       `
     );
@@ -279,6 +288,7 @@ export async function markNotificationAsRead(id: string) {
         message,
         type,
         is_read,
+        is_archived,
         created_date
       `
     )
@@ -292,13 +302,39 @@ export async function markNotificationAsRead(id: string) {
   return normalizeNotification(data as NotificationRow);
 }
 
+export async function archiveNotification(id: string) {
+  const supabase = createClient();
+
+  const { data, error } = await supabase
+    .from("notifications")
+    .update({ is_archived: true })
+    .eq("id", id)
+    .select(
+      `
+        id,
+        member_email,
+        title,
+        message,
+        type,
+        is_read,
+        is_archived,
+        created_date
+      `
+    )
+    .single();
+
+  if (error) {
+    logSupabaseError("Error archiving notification:", error);
+    throw new Error(getErrorMessage(error));
+  }
+
+  return normalizeNotification(data as NotificationRow);
+}
+
 export async function deleteNotification(id: string) {
   const supabase = createClient();
 
-  const { error } = await supabase
-    .from("notifications")
-    .delete()
-    .eq("id", id);
+  const { error } = await supabase.from("notifications").delete().eq("id", id);
 
   if (error) {
     logSupabaseError("Error deleting notification:", error);
@@ -307,3 +343,12 @@ export async function deleteNotification(id: string) {
 
   return true;
 }
+
+export type NotificationItem = {
+  id: string;
+  title: string;
+  message: string;
+  type: "pickup_ready" | "case_finalized" | "new_case" | "reminder" | "general";
+  is_read: boolean;
+  created_date: string;
+};
