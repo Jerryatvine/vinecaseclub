@@ -104,13 +104,6 @@ function getErrorMessage(error: unknown) {
 }
 
 function isSupportedImageFile(file: File) {
-  const allowedMimeTypes = [
-    "image/jpeg",
-    "image/png",
-    "image/webp",
-    "image/gif",
-  ];
-
   const lowerName = file.name.toLowerCase();
 
   const blockedExtensions = [".heic", ".heif"];
@@ -118,7 +111,67 @@ function isSupportedImageFile(file: File) {
     lowerName.endsWith(ext)
   );
 
-  return allowedMimeTypes.includes(file.type) && !isBlockedExtension;
+  const allowedExtensions = [".jpg", ".jpeg", ".png", ".webp", ".gif"];
+  const hasAllowedExtension = allowedExtensions.some((ext) =>
+    lowerName.endsWith(ext)
+  );
+
+  const allowedMimeTypes = [
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+    "image/gif",
+  ];
+
+  return !isBlockedExtension && (allowedMimeTypes.includes(file.type) || hasAllowedExtension);
+}
+
+function getImageContentType(file: File) {
+  if (file.type && file.type.startsWith("image/")) {
+    return file.type;
+  }
+
+  const lowerName = file.name.toLowerCase();
+
+  if (lowerName.endsWith(".jpg") || lowerName.endsWith(".jpeg")) {
+    return "image/jpeg";
+  }
+
+  if (lowerName.endsWith(".png")) {
+    return "image/png";
+  }
+
+  if (lowerName.endsWith(".webp")) {
+    return "image/webp";
+  }
+
+  if (lowerName.endsWith(".gif")) {
+    return "image/gif";
+  }
+
+  return null;
+}
+
+function getFileExtension(file: File) {
+  const lowerName = file.name.toLowerCase();
+
+  if (lowerName.endsWith(".jpg") || lowerName.endsWith(".jpeg")) {
+    return "jpg";
+  }
+
+  if (lowerName.endsWith(".png")) {
+    return "png";
+  }
+
+  if (lowerName.endsWith(".webp")) {
+    return "webp";
+  }
+
+  if (lowerName.endsWith(".gif")) {
+    return "gif";
+  }
+
+  return "jpg";
 }
 
 export default function AdminWinesPage() {
@@ -224,8 +277,15 @@ export default function AdminWinesPage() {
   async function uploadWineImage(file: File) {
     if (!isSupportedImageFile(file)) {
       setImageError(
-        "Please upload a JPG, PNG, WEBP, or GIF image. HEIC images are not supported in the browser."
+        "Please upload a JPG, JPEG, PNG, WEBP, or GIF image. HEIC images are not supported."
       );
+      return;
+    }
+
+    const contentType = getImageContentType(file);
+
+    if (!contentType) {
+      setImageError("Could not determine the image type. Please use JPG, PNG, WEBP, or GIF.");
       return;
     }
 
@@ -235,7 +295,7 @@ export default function AdminWinesPage() {
       setError("");
 
       const supabase = createClient();
-      const fileExt = file.name.split(".").pop()?.toLowerCase() || "jpg";
+      const fileExt = getFileExtension(file);
       const safeName =
         form.name
           .trim()
@@ -250,6 +310,7 @@ export default function AdminWinesPage() {
         .upload(filePath, file, {
           cacheControl: "3600",
           upsert: false,
+          contentType,
         });
 
       if (uploadError) {
