@@ -15,7 +15,6 @@ export type MemberCaseSummary = {
   tier: string | null;
   status: CaseStatus;
   created_at: string;
-  pickup_date: string | null;
   picked_up_at: string | null;
 };
 
@@ -53,11 +52,7 @@ export async function getLatestCasesForMemberEmails(emails: string[]) {
   const supabase = createClient();
 
   const cleanEmails = Array.from(
-    new Set(
-      emails
-        .map((e) => e.trim().toLowerCase())
-        .filter((e) => e.length > 0)
-    )
+    new Set(emails.map((e) => e.trim().toLowerCase()).filter((e) => e.length > 0))
   );
 
   if (cleanEmails.length === 0) {
@@ -75,7 +70,6 @@ export async function getLatestCasesForMemberEmails(emails: string[]) {
         tier,
         status,
         created_at,
-        pickup_date,
         picked_up_at
       `
     )
@@ -93,7 +87,6 @@ export async function getLatestCasesForMemberEmails(emails: string[]) {
     const email = row.member_email?.toLowerCase();
     if (!email) continue;
 
-    // Because we ordered desc, first one we see per email is the latest.
     if (!map.has(email)) {
       map.set(email, row);
     }
@@ -121,7 +114,6 @@ export async function markCasePickedUp(caseId: string) {
         tier,
         status,
         created_at,
-        pickup_date,
         picked_up_at
       `
     )
@@ -154,7 +146,6 @@ export async function undoCasePickedUp(caseId: string) {
         tier,
         status,
         created_at,
-        pickup_date,
         picked_up_at
       `
     )
