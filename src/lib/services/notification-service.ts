@@ -74,7 +74,7 @@ function normalizeNotification(row: NotificationRow): NotificationRecord {
   };
 }
 
-export async function getMyNotifications() {
+export async function getMyNotifications(options?: { archived?: boolean }) {
   const supabase = createClient();
 
   const {
@@ -92,6 +92,8 @@ export async function getMyNotifications() {
     return [];
   }
 
+  const archived = options?.archived ?? false;
+
   const { data, error } = await supabase
     .from("notifications")
     .select(
@@ -107,7 +109,7 @@ export async function getMyNotifications() {
       `
     )
     .eq("member_email", email)
-    .eq("is_archived", false)
+    .eq("is_archived", archived)
     .order("created_date", { ascending: false });
 
   if (error) {
@@ -325,6 +327,35 @@ export async function archiveNotification(id: string) {
 
   if (error) {
     logSupabaseError("Error archiving notification:", error);
+    throw new Error(getErrorMessage(error));
+  }
+
+  return normalizeNotification(data as NotificationRow);
+}
+
+export async function unarchiveNotification(id: string) {
+  const supabase = createClient();
+
+  const { data, error } = await supabase
+    .from("notifications")
+    .update({ is_archived: false })
+    .eq("id", id)
+    .select(
+      `
+        id,
+        member_email,
+        title,
+        message,
+        type,
+        is_read,
+        is_archived,
+        created_date
+      `
+    )
+    .single();
+
+  if (error) {
+    logSupabaseError("Error unarchiving notification:", error);
     throw new Error(getErrorMessage(error));
   }
 
