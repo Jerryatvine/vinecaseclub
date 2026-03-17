@@ -2,12 +2,11 @@
 
 import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
 export default function LoginPage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const supabase = createClient();
 
   const [email, setEmail] = useState("");
@@ -15,8 +14,7 @@ export default function LoginPage() {
   const [remember, setRemember] = useState(false);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
-
-  const successMessage = searchParams.get("message") || "";
+  const [successMessage, setSuccessMessage] = useState("");
 
   useEffect(() => {
     const rememberedEmail = localStorage.getItem("remembered_email") || "";
@@ -24,6 +22,10 @@ export default function LoginPage() {
       setEmail(rememberedEmail);
       setRemember(true);
     }
+
+    const params = new URLSearchParams(window.location.search);
+    const message = params.get("message") || "";
+    setSuccessMessage(message);
   }, []);
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
