@@ -97,10 +97,31 @@ export async function getAllCases() {
 export async function getUserCases(email: string) {
   const supabase = createClient();
 
+  const normalizedEmail = email.trim().toLowerCase();
+
+  const { data: profile, error: profileError } = await supabase
+    .from("profiles")
+    .select("membership_tier")
+    .eq("email", normalizedEmail)
+    .maybeSingle();
+
+  if (profileError) {
+    logSupabaseError("Error loading user profile for cases:", profileError);
+    throw new Error(getErrorMessage(profileError));
+  }
+
+  const membershipTier: CaseTier =
+    profile?.membership_tier === "economy" ? "economy" : "premium";
+
   const { data, error } = await supabase
     .from("cases")
     .select("*")
-    .eq("member_email", email)
+    .or(
+      [
+        `member_email.eq.${normalizedEmail}`,
+        `and(member_email.is.null,tier.eq.${membershipTier},status.neq.draft)`,
+      ].join(",")
+    )
     .order("created_at", { ascending: false });
 
   if (error) {
@@ -131,9 +152,14 @@ export async function getCaseById(id: string) {
 export async function createCase(input: CaseInput) {
   const supabase = createClient();
 
+  const payload = {
+    ...input,
+    member_email: input.member_email?.trim().toLowerCase() || null,
+  };
+
   const { data, error } = await supabase
     .from("cases")
-    .insert([input])
+    .insert([payload])
     .select()
     .single();
 
@@ -148,9 +174,17 @@ export async function createCase(input: CaseInput) {
 export async function updateCase(id: string, input: Partial<CaseInput>) {
   const supabase = createClient();
 
+  const payload = {
+    ...input,
+    member_email:
+      input.member_email === undefined
+        ? undefined
+        : input.member_email?.trim().toLowerCase() || null,
+  };
+
   const { data, error } = await supabase
     .from("cases")
-    .update(input)
+    .update(payload)
     .eq("id", id)
     .select()
     .single();
