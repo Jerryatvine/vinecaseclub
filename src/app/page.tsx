@@ -9,7 +9,6 @@ import {
   Star,
   Bell,
   ArrowRight,
-  Sparkles,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { getUserCases, type CaseRecord } from "@/lib/services/case-service";
@@ -23,6 +22,14 @@ type User = {
   email: string;
 };
 
+type ProfileRecord = {
+  id: string;
+  name: string | null;
+  email: string | null;
+  role: string | null;
+  membership_tier: string | null;
+};
+
 function Card({
   children,
   className = "",
@@ -31,7 +38,9 @@ function Card({
   className?: string;
 }) {
   return (
-    <div className={`rounded-3xl border border-stone-200 bg-white shadow-sm ${className}`}>
+    <div
+      className={`rounded-3xl border border-stone-200 bg-white shadow-sm ${className}`}
+    >
       {children}
     </div>
   );
@@ -69,14 +78,42 @@ function CaseStatusBadge({ status }: { status: CaseRecord["status"] }) {
   };
 
   return (
-    <span className={`inline-flex items-center rounded-full px-3 py-1 text-sm font-medium ${colorMap[status]}`}>
+    <span
+      className={`inline-flex items-center rounded-full px-3 py-1 text-sm font-medium ${colorMap[status]}`}
+    >
       {labelMap[status]}
     </span>
   );
 }
 
+function getErrorMessage(error: unknown) {
+  if (typeof error === "object" && error !== null) {
+    const maybeError = error as {
+      message?: string;
+      details?: string;
+      hint?: string;
+      code?: string;
+    };
+
+    return [
+      maybeError.message ? `message: ${maybeError.message}` : null,
+      maybeError.details ? `details: ${maybeError.details}` : null,
+      maybeError.hint ? `hint: ${maybeError.hint}` : null,
+      maybeError.code ? `code: ${maybeError.code}` : null,
+    ]
+      .filter(Boolean)
+      .join(" | ");
+  }
+
+  if (typeof error === "string") {
+    return error;
+  }
+
+  return "Unknown error";
+}
+
 export default function DashboardPage() {
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
 
   const [user, setUser] = useState<User | null>(null);
   const [cases, setCases] = useState<CaseRecord[]>([]);
@@ -92,10 +129,15 @@ export default function DashboardPage() {
 
         const {
           data: { session },
+          error: sessionError,
         } = await supabase.auth.getSession();
 
+        if (sessionError) {
+          throw sessionError;
+        }
+
         const authUser = session?.user;
-        const email = authUser?.email;
+        const email = authUser?.email?.trim().toLowerCase();
 
         if (!email) {
           setUser(null);
@@ -104,19 +146,23 @@ export default function DashboardPage() {
           return;
         }
 
-        const { data: member, error: memberError } = await supabase
-          .from("members")
-          .select("name, email")
-          .eq("user_id", authUser.id)
-          .maybeSingle();
+        const { data: profile, error: profileError } = await supabase
+          .from("profiles")
+          .select("id, name, email, role, membership_tier")
+          .eq("email", email)
+          .maybeSingle<ProfileRecord>();
 
-        if (memberError) {
-          console.error("Failed to load member profile:", memberError);
+        if (profileError) {
+          console.error("Failed to load profile:", profileError);
         }
 
         setUser({
-          full_name: member?.name || authUser.user_metadata?.full_name || "Member",
-          email: member?.email || email,
+          full_name:
+            profile?.name ||
+            authUser.user_metadata?.full_name ||
+            authUser.user_metadata?.name ||
+            "Member",
+          email: profile?.email || email,
         });
 
         const [caseData, notificationData] = await Promise.all([
@@ -127,8 +173,8 @@ export default function DashboardPage() {
         setCases(caseData);
         setNotifications(notificationData);
       } catch (err) {
-        console.error(err);
-        setError("Could not load dashboard.");
+        console.error("Dashboard load failed:", err);
+        setError(getErrorMessage(err) || "Could not load dashboard.");
       } finally {
         setLoading(false);
       }
@@ -138,8 +184,10 @@ export default function DashboardPage() {
   }, [supabase]);
 
   const currentCase = useMemo(() => {
-    return cases.find((c) =>
-      ["draft", "customizing", "finalized", "ready_for_pickup"].includes(c.status)
+    return (
+      cases.find((c) =>
+        ["draft", "customizing", "finalized", "ready_for_pickup"].includes(c.status)
+      ) ?? null
     );
   }, [cases]);
 
@@ -171,14 +219,16 @@ export default function DashboardPage() {
   return (
     <main className="min-h-screen bg-[#f4f2ef]">
       <div className="mx-auto max-w-6xl space-y-8 p-6 lg:p-10">
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+        >
           <p className="text-sm text-stone-500">Welcome back,</p>
           <h1 className="text-3xl font-bold tracking-tight text-stone-800 lg:text-5xl">
             {user?.full_name || "Member"}
           </h1>
         </motion.div>
 
-        {/* Stats */}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {[
             {
@@ -208,7 +258,9 @@ export default function DashboardPage() {
           ].map((stat) => (
             <Card key={stat.label}>
               <CardContent className="flex items-center gap-4 p-5">
-                <div className={`flex h-12 w-12 items-center justify-center rounded-2xl ${stat.color}`}>
+                <div
+                  className={`flex h-12 w-12 items-center justify-center rounded-2xl ${stat.color}`}
+                >
                   <stat.icon className="h-5 w-5" />
                 </div>
                 <div>
@@ -220,7 +272,6 @@ export default function DashboardPage() {
           ))}
         </div>
 
-        {/* Current Case */}
         {currentCase && (
           <Card>
             <CardContent className="p-6">
@@ -228,7 +279,7 @@ export default function DashboardPage() {
                 <div>
                   <h2 className="text-xl font-semibold">Current Quarter</h2>
                   <p className="text-sm text-stone-500">
-                    {currentCase.quarter} · {(currentCase.case_size ?? 12)} bottles
+                    {currentCase.quarter} · {currentCase.case_size ?? 12} bottles
                   </p>
                 </div>
                 <CaseStatusBadge status={currentCase.status} />
