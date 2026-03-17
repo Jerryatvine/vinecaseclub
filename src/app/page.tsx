@@ -22,7 +22,7 @@ type User = {
   email: string;
 };
 
-type ProfileRecord = {
+type MemberRecord = {
   id: string;
   name: string | null;
   email: string | null;
@@ -146,23 +146,23 @@ export default function DashboardPage() {
           return;
         }
 
-        const { data: profile, error: profileError } = await supabase
-          .from("profiles")
+        const { data: member, error: memberError } = await supabase
+          .from("members")
           .select("id, name, email, role, membership_tier")
           .eq("email", email)
-          .maybeSingle();
+          .maybeSingle<MemberRecord>();
 
-        if (profileError) {
-          console.error("Failed to load profile:", profileError);
+        if (memberError) {
+          console.error("Failed to load member:", memberError);
         }
 
         setUser({
           full_name:
-            profile?.name ||
+            member?.name ||
             authUser.user_metadata?.full_name ||
             authUser.user_metadata?.name ||
             "Member",
-          email: profile?.email || email,
+          email: member?.email || email,
         });
 
         const [caseData, notificationData] = await Promise.all([

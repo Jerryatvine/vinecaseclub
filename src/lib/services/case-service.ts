@@ -48,6 +48,14 @@ type CaseItemInput = {
   quantity: number;
 };
 
+type MemberRecord = {
+  id: string;
+  name?: string | null;
+  email?: string | null;
+  role?: string | null;
+  membership_tier?: string | null;
+};
+
 function getErrorMessage(error: unknown) {
   if (typeof error === "object" && error !== null) {
     const maybeError = error as {
@@ -96,22 +104,21 @@ export async function getAllCases() {
 
 export async function getUserCases(email: string) {
   const supabase = createClient();
-
   const normalizedEmail = email.trim().toLowerCase();
 
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("membership_tier")
+  const { data: member, error: memberError } = await supabase
+    .from("members")
+    .select("id, name, email, role, membership_tier")
     .eq("email", normalizedEmail)
     .maybeSingle();
 
-  if (profileError) {
-    logSupabaseError("Error loading user profile for cases:", profileError);
-    throw new Error(getErrorMessage(profileError));
+  if (memberError) {
+    logSupabaseError("Error loading member for cases:", memberError);
+    throw new Error(getErrorMessage(memberError));
   }
 
   const membershipTier: CaseTier =
-    profile?.membership_tier === "economy" ? "economy" : "premium";
+    member?.membership_tier === "economy" ? "economy" : "premium";
 
   const { data, error } = await supabase
     .from("cases")
