@@ -139,7 +139,7 @@ export default function DashboardPage() {
         const authUser = session?.user;
         const email = authUser?.email?.trim().toLowerCase();
 
-        if (!email) {
+        if (!authUser || !email) {
           setUser(null);
           setCases([]);
           setNotifications([]);
@@ -150,7 +150,7 @@ export default function DashboardPage() {
           .from("profiles")
           .select("id, name, email, role, membership_tier")
           .eq("email", email)
-          .maybeSingle<ProfileRecord>();
+          .maybeSingle();
 
         if (profileError) {
           console.error("Failed to load profile:", profileError);
