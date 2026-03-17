@@ -1,12 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useState } from "react";
-import { useRouter } from "next/navigation";
+import { FormEvent, useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
 export default function LoginPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const supabase = createClient();
 
   const [email, setEmail] = useState("");
@@ -14,6 +15,16 @@ export default function LoginPage() {
   const [remember, setRemember] = useState(false);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+
+  const successMessage = searchParams.get("message") || "";
+
+  useEffect(() => {
+    const rememberedEmail = localStorage.getItem("remembered_email") || "";
+    if (rememberedEmail) {
+      setEmail(rememberedEmail);
+      setRemember(true);
+    }
+  }, []);
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -51,20 +62,14 @@ export default function LoginPage() {
   return (
     <main className="min-h-screen bg-[#f4f2ef] flex items-center justify-center p-6">
       <div className="w-full max-w-md rounded-3xl border border-stone-200 bg-white p-10 shadow-sm">
-
-        {/* Header */}
         <div className="mb-6 text-center">
           <h1 className="text-3xl font-bold text-stone-800">
             Vine & Table Case Club
           </h1>
-          <p className="mt-2 text-sm text-stone-500">
-            Member Portal
-          </p>
+          <p className="mt-2 text-sm text-stone-500">Member Portal</p>
         </div>
 
-        {/* Form */}
         <form onSubmit={handleSubmit} className="space-y-4">
-
           <input
             type="email"
             placeholder="Email"
@@ -83,7 +88,6 @@ export default function LoginPage() {
             required
           />
 
-          {/* Remember / Forgot */}
           <div className="flex items-center justify-between text-sm">
             <label className="flex items-center gap-2 text-stone-600">
               <input
@@ -102,9 +106,11 @@ export default function LoginPage() {
             </Link>
           </div>
 
-          {error && (
-            <p className="text-sm text-red-500">{error}</p>
+          {successMessage && (
+            <p className="text-sm text-emerald-600">{successMessage}</p>
           )}
+
+          {error && <p className="text-sm text-red-500">{error}</p>}
 
           <button
             type="submit"
@@ -113,10 +119,8 @@ export default function LoginPage() {
           >
             {saving ? "Signing In..." : "Sign In"}
           </button>
-
         </form>
 
-        {/* Footer */}
         <p className="mt-6 text-center text-sm text-stone-500">
           Don&apos;t have an account?{" "}
           <Link
@@ -126,7 +130,6 @@ export default function LoginPage() {
             Create one
           </Link>
         </p>
-
       </div>
     </main>
   );

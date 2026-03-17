@@ -2,11 +2,13 @@
 
 import Link from "next/link";
 import { FormEvent, useState } from "react";
+import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
 type MembershipTier = "economy" | "premium";
 
 export default function SignupPage() {
+  const router = useRouter();
   const supabase = createClient();
 
   const [name, setName] = useState("");
@@ -16,7 +18,6 @@ export default function SignupPage() {
     useState<MembershipTier>("economy");
 
   const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
   const [saving, setSaving] = useState(false);
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
@@ -25,7 +26,6 @@ export default function SignupPage() {
     try {
       setSaving(true);
       setError("");
-      setSuccess("");
 
       const emailRedirectTo =
         typeof window !== "undefined"
@@ -49,14 +49,11 @@ export default function SignupPage() {
         return;
       }
 
-      setSuccess(
-        "Account created. Please check your email and click the confirmation link to complete signup."
-      );
+      const successMessage =
+        "Account created. Please check your email and click the confirmation link to complete signup.";
 
-      setName("");
-      setEmail("");
-      setPassword("");
-      setMembershipTier("economy");
+      router.push(`/login?message=${encodeURIComponent(successMessage)}`);
+      router.refresh();
     } catch (err) {
       console.error(err);
       setError("Could not create account.");
@@ -133,7 +130,6 @@ export default function SignupPage() {
           </div>
 
           {error && <p className="text-sm text-red-600">{error}</p>}
-          {success && <p className="text-sm text-emerald-600">{success}</p>}
 
           <button
             type="submit"
