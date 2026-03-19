@@ -43,6 +43,11 @@ type CaseItemWithWine = {
     | null;
 };
 
+type ExistingPaymentRow = {
+  id: string;
+  status: string;
+};
+
 export async function POST(req: Request) {
   try {
     const { caseId } = await req.json();
@@ -73,6 +78,33 @@ export async function POST(req: Request) {
     if (typedCase.charged) {
       return NextResponse.json(
         { error: "Case already charged." },
+        { status: 400 }
+      );
+    }
+
+    const { data: existingPayment, error: existingPaymentError } =
+      await supabase
+        .from("payments")
+        .select("id, status")
+        .eq("case_id", caseId)
+        .eq("status", "paid")
+        .maybeSingle();
+
+    if (existingPaymentError) {
+      return NextResponse.json(
+        { error: "Could not verify prior payment history." },
+        { status: 500 }
+      );
+    }
+
+    if (existingPayment) {
+      const typedExistingPayment = existingPayment as ExistingPaymentRow;
+
+      return NextResponse.json(
+        {
+          error: "A paid payment record already exists for this case.",
+          paymentId: typedExistingPayment.id,
+        },
         { status: 400 }
       );
     }
@@ -126,7 +158,7 @@ export async function POST(req: Request) {
       );
     }
 
-    let total = 0;
+    let totalDollars = 0;
 
     for (const item of typedItems) {
       const wineValue = item.wines;
@@ -134,22 +166,24 @@ export async function POST(req: Request) {
       const clubPrice = Number(wineRow?.club_price ?? 0);
       const quantity = Number(item.quantity ?? 0);
 
-      total += clubPrice * quantity;
+      totalDollars += clubPrice * quantity;
     }
 
-    if (total <= 0) {
+    if (totalDollars <= 0) {
       return NextResponse.json(
         { error: "Calculated case total is invalid." },
         { status: 400 }
       );
     }
 
+    const amountInCents = Math.round(totalDollars * 100);
+
     const paymentResponse = await square.paymentsApi.createPayment({
       idempotencyKey: randomUUID(),
       sourceId: typedMember.square_card_id,
       customerId: typedMember.square_customer_id ?? undefined,
       amountMoney: {
-        amount: Math.round(total * 100),
+        amount: BigInt(amountInCents),
         currency: "USD",
       },
     });
@@ -163,19 +197,44 @@ export async function POST(req: Request) {
       );
     }
 
-    const { error: updateError } = await supabase
+    const { error: insertPaymentError } = await supabase
+      .from("payments")
+      .insert({
+        member_id: typedMember.id,
+        case_id: caseId,
+        amount: amountInCents,
+        square_payment_id: paymentId,
+        status: "paid",
+      });
+
+    if (insertPaymentError) {
+      return NextResponse.json(
+        {
+          error:
+            "Payment succeeded, but payment history failed to save. Please review this case manually.",
+          paymentId,
+        },
+        { status: 500 }
+      );
+    }
+
+    const chargedAt = new Date().toISOString();
+
+    const { error: updateCaseError } = await supabase
       .from("cases")
       .update({
         charged: true,
-        charged_at: new Date().toISOString(),
+        charged_at: chargedAt,
         square_payment_id: paymentId,
       })
       .eq("id", caseId);
 
-    if (updateError) {
+    if (updateCaseError) {
       return NextResponse.json(
         {
-          error: "Payment succeeded, but case record failed to update.",
+          error:
+            "Payment succeeded and payment history was saved, but the case record failed to update. Please review this case manually.",
+          paymentId,
         },
         { status: 500 }
       );
@@ -184,7 +243,9 @@ export async function POST(req: Request) {
     return NextResponse.json({
       success: true,
       paymentId,
-      total,
+      total: totalDollars,
+      amount: amountInCents,
+      chargedAt,
     });
   } catch (error) {
     return NextResponse.json(
