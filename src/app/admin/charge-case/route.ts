@@ -82,12 +82,13 @@ export async function POST(req: Request) {
       );
     }
 
-    const { data: existingPayment, error: existingPaymentError } = await supabase
-      .from("payments")
-      .select("id, status")
-      .eq("case_id", caseId)
-      .eq("status", "paid")
-      .maybeSingle();
+    const { data: existingPayment, error: existingPaymentError } =
+      await supabase
+        .from("payments")
+        .select("id, status")
+        .eq("case_id", caseId)
+        .eq("status", "paid")
+        .maybeSingle();
 
     if (existingPaymentError) {
       return NextResponse.json(
@@ -196,13 +197,15 @@ export async function POST(req: Request) {
       );
     }
 
-    const { error: insertPaymentError } = await supabase.from("payments").insert({
-      member_id: typedMember.id,
-      case_id: caseId,
-      amount: amountInCents,
-      square_payment_id: paymentId,
-      status: "paid",
-    });
+    const { error: insertPaymentError } = await supabase
+      .from("payments")
+      .insert({
+        member_id: typedMember.id,
+        case_id: caseId,
+        amount: amountInCents,
+        square_payment_id: paymentId,
+        status: "paid",
+      });
 
     if (insertPaymentError) {
       return NextResponse.json(
