@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useEffect, useMemo, useState } from "react";
 import {
   Bell,
+  CreditCard,
   LayoutDashboard,
   LogOut,
   Package,
@@ -19,6 +20,7 @@ type MemberRole = "admin" | "member";
 const baseNavItems = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/my-case", label: "My Case", icon: Package },
+  { href: "/account/billing", label: "Billing", icon: CreditCard },
   { href: "/wine-catalog", label: "Wine Catalog", icon: Wine },
   { href: "/rate-wines", label: "Rate Wines", icon: Star },
   { href: "/notifications", label: "Notifications", icon: Bell },

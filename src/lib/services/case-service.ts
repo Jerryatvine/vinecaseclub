@@ -21,6 +21,7 @@ export type CaseRecord = {
   member_email?: string | null;
   finalize_deadline?: string | null;
   created_at?: string;
+  template_case_id?: string | null;
 };
 
 export type CaseItemRecord = {
@@ -40,20 +41,13 @@ type CaseInput = {
   target_price_cap?: number | null;
   member_email?: string | null;
   finalize_deadline?: string | null;
+  template_case_id?: string | null;
 };
 
 type CaseItemInput = {
   case_id: string;
   wine_id: string;
   quantity: number;
-};
-
-type MemberRecord = {
-  id: string;
-  name?: string | null;
-  email?: string | null;
-  role?: string | null;
-  membership_tier?: string | null;
 };
 
 function getErrorMessage(error: unknown) {
@@ -92,6 +86,7 @@ export async function getAllCases() {
   const { data, error } = await supabase
     .from("cases")
     .select("*")
+    .is("template_case_id", null)
     .order("created_at", { ascending: false });
 
   if (error) {
@@ -106,29 +101,10 @@ export async function getUserCases(email: string) {
   const supabase = createClient();
   const normalizedEmail = email.trim().toLowerCase();
 
-  const { data: member, error: memberError } = await supabase
-    .from("members")
-    .select("id, name, email, role, membership_tier")
-    .eq("email", normalizedEmail)
-    .maybeSingle();
-
-  if (memberError) {
-    logSupabaseError("Error loading member for cases:", memberError);
-    throw new Error(getErrorMessage(memberError));
-  }
-
-  const membershipTier: CaseTier =
-    member?.membership_tier === "economy" ? "economy" : "premium";
-
   const { data, error } = await supabase
     .from("cases")
     .select("*")
-    .or(
-      [
-        `member_email.eq.${normalizedEmail}`,
-        `and(member_email.is.null,tier.eq.${membershipTier},status.neq.draft)`,
-      ].join(",")
-    )
+    .eq("member_email", normalizedEmail)
     .order("created_at", { ascending: false });
 
   if (error) {
@@ -162,6 +138,7 @@ export async function createCase(input: CaseInput) {
   const payload = {
     ...input,
     member_email: input.member_email?.trim().toLowerCase() || null,
+    template_case_id: input.template_case_id ?? null,
   };
 
   const { data, error } = await supabase
@@ -187,6 +164,8 @@ export async function updateCase(id: string, input: Partial<CaseInput>) {
       input.member_email === undefined
         ? undefined
         : input.member_email?.trim().toLowerCase() || null,
+    template_case_id:
+      input.template_case_id === undefined ? undefined : input.template_case_id,
   };
 
   const { data, error } = await supabase

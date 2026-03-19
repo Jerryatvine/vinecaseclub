@@ -1,5 +1,12 @@
 import Link from "next/link";
-import { Bell, Package, Shield, Wine, Star } from "lucide-react";
+import {
+  Bell,
+  CreditCard,
+  Package,
+  Shield,
+  Star,
+  Wine,
+} from "lucide-react";
 
 const adminCards = [
   {
@@ -27,6 +34,12 @@ const adminCards = [
     icon: Shield,
   },
   {
+    title: "Payments",
+    description: "View case charges and payment history.",
+    href: "/admin/payments",
+    icon: CreditCard,
+  },
+  {
     title: "Notifications",
     description: "Send pickup or case update notifications.",
     href: "/admin/notifications",
@@ -41,7 +54,7 @@ export default function AdminDashboardPage() {
         <div>
           <h1 className="text-3xl font-bold text-stone-800">Admin Dashboard</h1>
           <p className="mt-2 text-sm text-stone-500">
-            Manage wines, ratings, cases, members, and notifications.
+            Manage wines, ratings, cases, members, payments, and notifications.
           </p>
         </div>
 

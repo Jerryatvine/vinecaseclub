@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import {
   getAllMembers,
@@ -44,6 +45,15 @@ function formatDateTime(dateString?: string | null) {
   return d.toLocaleString();
 }
 
+function formatCurrency(amount?: number | null) {
+  const value = Number(amount ?? 0);
+
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+  }).format(value);
+}
+
 function caseLabel(c?: MemberCaseSummary) {
   if (!c) return "—";
   const q = c.quarter ?? "";
@@ -51,6 +61,24 @@ function caseLabel(c?: MemberCaseSummary) {
   const t = c.tier ? ` (${c.tier})` : "";
   const label = `${q}${y}${t}`.trim();
   return label || "—";
+}
+
+function paymentStatusLabel(c?: MemberCaseSummary) {
+  if (!c) return "—";
+  if (c.charged) return "Charged";
+  return "Not charged";
+}
+
+function paymentStatusClasses(c?: MemberCaseSummary) {
+  if (!c) {
+    return "bg-stone-100 text-stone-600";
+  }
+
+  if (c.charged) {
+    return "bg-emerald-100 text-emerald-700";
+  }
+
+  return "bg-amber-100 text-amber-700";
 }
 
 export default function AdminMembersPage() {
@@ -64,16 +92,45 @@ export default function AdminMembersPage() {
 
   const [savingId, setSavingId] = useState<string | null>(null);
   const [pickupSavingEmail, setPickupSavingEmail] = useState<string | null>(null);
+  const [chargeSavingEmail, setChargeSavingEmail] = useState<string | null>(null);
 
   const [error, setError] = useState("");
+  const [successMessage, setSuccessMessage] = useState("");
+
+  async function refreshLatestCases(memberList?: Member[]) {
+    try {
+      const sourceMembers = memberList ?? members;
+
+      if (sourceMembers.length === 0) {
+        setLatestCasesByEmail(new Map());
+        return;
+      }
+
+      setLoadingCases(true);
+      setError("");
+
+      const map = await getLatestCasesForMemberEmails(
+        sourceMembers.map((m) => m.email)
+      );
+
+      setLatestCasesByEmail(map);
+    } catch (err) {
+      console.error(err);
+      setError("Could not load member cases.");
+    } finally {
+      setLoadingCases(false);
+    }
+  }
 
   useEffect(() => {
-    const loadMembers = async () => {
+    const initialize = async () => {
       try {
         setLoading(true);
         setError("");
+
         const data = await getAllMembers();
         setMembers(data);
+        await refreshLatestCases(data);
       } catch (err) {
         console.error(err);
         setError("Could not load members.");
@@ -82,35 +139,8 @@ export default function AdminMembersPage() {
       }
     };
 
-    loadMembers();
+    initialize();
   }, []);
-
-  useEffect(() => {
-    async function loadLatestCases() {
-      try {
-        if (members.length === 0) {
-          setLatestCasesByEmail(new Map());
-          return;
-        }
-
-        setLoadingCases(true);
-        setError("");
-
-        const map = await getLatestCasesForMemberEmails(
-          members.map((m) => m.email)
-        );
-
-        setLatestCasesByEmail(map);
-      } catch (err) {
-        console.error(err);
-        setError("Could not load member cases.");
-      } finally {
-        setLoadingCases(false);
-      }
-    }
-
-    loadLatestCases();
-  }, [members]);
 
   const unreadable = useMemo(() => loading || loadingCases, [loading, loadingCases]);
 
@@ -118,6 +148,7 @@ export default function AdminMembersPage() {
     try {
       setSavingId(memberId);
       setError("");
+      setSuccessMessage("");
 
       const updated = await updateMemberRole(memberId, role);
       if (!updated) return;
@@ -142,6 +173,7 @@ export default function AdminMembersPage() {
     try {
       setSavingId(memberId);
       setError("");
+      setSuccessMessage("");
 
       const updated = await updateMemberTier(memberId, membership_tier);
       if (!updated) return;
@@ -181,6 +213,7 @@ export default function AdminMembersPage() {
     try {
       setPickupSavingEmail(email);
       setError("");
+      setSuccessMessage("");
 
       const updated = await markCasePickedUp(current.id);
 
@@ -189,6 +222,8 @@ export default function AdminMembersPage() {
         next.set(email, updated);
         return next;
       });
+
+      setSuccessMessage("Case marked as picked up.");
     } catch (err) {
       console.error(err);
       setError("Could not mark case as picked up.");
@@ -217,6 +252,7 @@ export default function AdminMembersPage() {
     try {
       setPickupSavingEmail(email);
       setError("");
+      setSuccessMessage("");
 
       const updated = await undoCasePickedUp(current.id);
 
@@ -225,6 +261,8 @@ export default function AdminMembersPage() {
         next.set(email, updated);
         return next;
       });
+
+      setSuccessMessage("Picked up status was undone.");
     } catch (err) {
       console.error(err);
       setError("Could not undo picked up.");
@@ -233,17 +271,101 @@ export default function AdminMembersPage() {
     }
   }
 
+  async function handleChargeCard(memberEmail: string) {
+    const email = memberEmail.trim().toLowerCase();
+    const current = latestCasesByEmail.get(email);
+
+    if (!current?.id) {
+      setError("No case found for this member.");
+      return;
+    }
+
+    if (current.charged) {
+      setError("This member's latest case is already charged.");
+      return;
+    }
+
+    if (current.status !== "ready_for_pickup") {
+      setError("Only cases marked ready_for_pickup can be charged here.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Charge this member's saved card?\n\nMember: ${memberEmail}\nCase: ${caseLabel(
+        current
+      )}\n\nThis will charge the saved Square card on file.`
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setChargeSavingEmail(email);
+      setError("");
+      setSuccessMessage("");
+
+      const response = await fetch("/api/admin/charge-case", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          caseId: current.id,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        setError(result?.error || "Could not charge card.");
+        return;
+      }
+
+      await refreshLatestCases();
+
+      setSuccessMessage(
+        `Card charged successfully for ${memberEmail}. Total charged: ${formatCurrency(
+          result?.total
+        )}.`
+      );
+    } catch (err) {
+      console.error(err);
+      setError("Could not charge card.");
+    } finally {
+      setChargeSavingEmail(null);
+    }
+  }
+
   return (
     <main className="min-h-screen bg-[#f4f2ef]">
       <div className="mx-auto max-w-7xl p-6 lg:p-10">
-        <h1 className="text-3xl font-bold text-stone-800">Members</h1>
-        <p className="mt-2 text-sm text-stone-500">
-          View member accounts, roles, case tiers, and pickup status.
-        </p>
+        <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+          <div>
+            <h1 className="text-3xl font-bold text-stone-800">Members</h1>
+            <p className="mt-2 text-sm text-stone-500">
+              View member accounts, roles, case tiers, payment status, and pickup
+              status.
+            </p>
+          </div>
+
+          <Link
+            href="/admin/payments"
+            className="inline-flex w-fit items-center rounded-2xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-medium text-stone-700 transition hover:bg-stone-50"
+          >
+            View all payments
+          </Link>
+        </div>
 
         {error && (
           <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
             {error}
+          </div>
+        )}
+
+        {successMessage && (
+          <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+            {successMessage}
           </div>
         )}
 
@@ -256,6 +378,8 @@ export default function AdminMembersPage() {
                 <th className="px-4 py-3 font-medium">Joined</th>
                 <th className="px-4 py-3 font-medium">Latest Case</th>
                 <th className="px-4 py-3 font-medium">Case Status</th>
+                <th className="px-4 py-3 font-medium">Payment</th>
+                <th className="px-4 py-3 font-medium">Charged At</th>
                 <th className="px-4 py-3 font-medium">Picked Up</th>
                 <th className="px-4 py-3 font-medium">Role</th>
                 <th className="px-4 py-3 font-medium">Membership Tier</th>
@@ -266,13 +390,13 @@ export default function AdminMembersPage() {
             <tbody>
               {unreadable ? (
                 <tr>
-                  <td colSpan={9} className="px-4 py-8 text-center text-stone-500">
+                  <td colSpan={11} className="px-4 py-8 text-center text-stone-500">
                     Loading members...
                   </td>
                 </tr>
               ) : members.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="px-4 py-8 text-center text-stone-500">
+                  <td colSpan={11} className="px-4 py-8 text-center text-stone-500">
                     No members found.
                   </td>
                 </tr>
@@ -281,12 +405,16 @@ export default function AdminMembersPage() {
                   const email = member.email.trim().toLowerCase();
                   const c = latestCasesByEmail.get(email);
                   const isPickupSaving = pickupSavingEmail === email;
+                  const isChargeSaving = chargeSavingEmail === email;
 
                   const status = c?.status ?? null;
                   const pickedUpAt = c?.picked_up_at ?? null;
+                  const chargedAt = c?.charged_at ?? null;
 
-                  const canMarkPickedUp = c?.id && status === "ready_for_pickup";
-                  const canUndoPickedUp = c?.id && status === "picked_up";
+                  const canMarkPickedUp = !!c?.id && status === "ready_for_pickup";
+                  const canUndoPickedUp = !!c?.id && status === "picked_up";
+                  const canChargeCard =
+                    !!c?.id && status === "ready_for_pickup" && !c?.charged;
 
                   return (
                     <tr key={member.id} className="border-b border-stone-100">
@@ -298,6 +426,18 @@ export default function AdminMembersPage() {
                       <td className="px-4 py-4 text-stone-700">{caseLabel(c)}</td>
                       <td className="px-4 py-4 text-stone-700">
                         {c?.status ?? "—"}
+                      </td>
+                      <td className="px-4 py-4">
+                        <span
+                          className={`inline-flex rounded-full px-3 py-1 text-xs font-medium ${paymentStatusClasses(
+                            c
+                          )}`}
+                        >
+                          {paymentStatusLabel(c)}
+                        </span>
+                      </td>
+                      <td className="px-4 py-4 text-stone-700">
+                        {chargedAt ? formatDateTime(chargedAt) : "—"}
                       </td>
                       <td className="px-4 py-4 text-stone-700">
                         {pickedUpAt ? formatDateTime(pickedUpAt) : "—"}
@@ -338,6 +478,22 @@ export default function AdminMembersPage() {
                         <div className="flex flex-wrap gap-2">
                           <button
                             type="button"
+                            disabled={!canChargeCard || isChargeSaving}
+                            onClick={() => handleChargeCard(member.email)}
+                            className="rounded-2xl bg-emerald-700 px-3 py-2 text-xs font-medium text-white disabled:opacity-50"
+                            title={
+                              canChargeCard
+                                ? "Charge the saved card for the latest ready case"
+                                : c?.charged
+                                ? "This latest case is already charged"
+                                : "Only available when case status is ready_for_pickup"
+                            }
+                          >
+                            {isChargeSaving ? "Charging..." : "Charge card"}
+                          </button>
+
+                          <button
+                            type="button"
                             disabled={!canMarkPickedUp || isPickupSaving}
                             onClick={() => handleMarkPickedUp(member.email)}
                             className="rounded-2xl bg-[#263330] px-3 py-2 text-xs font-medium text-white disabled:opacity-50"
@@ -359,7 +515,23 @@ export default function AdminMembersPage() {
                           >
                             Undo
                           </button>
+
+                          <Link
+                            href={`/admin/payments?member=${encodeURIComponent(
+                              member.email
+                            )}`}
+                            className="rounded-2xl border border-stone-300 bg-white px-3 py-2 text-xs font-medium text-stone-700 transition hover:bg-stone-50"
+                            title="View this member's payment history"
+                          >
+                            View payments
+                          </Link>
                         </div>
+
+                        {c?.square_payment_id ? (
+                          <p className="mt-2 max-w-[220px] break-all text-xs text-stone-500">
+                            Payment ID: {c.square_payment_id}
+                          </p>
+                        ) : null}
                       </td>
                     </tr>
                   );

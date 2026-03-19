@@ -2,11 +2,9 @@
 
 import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
 export default function LoginPage() {
-  const router = useRouter();
   const supabase = createClient();
 
   const [email, setEmail] = useState("");
@@ -51,8 +49,7 @@ export default function LoginPage() {
         localStorage.removeItem("remembered_email");
       }
 
-      router.push("/");
-      router.refresh();
+      window.location.href = "/auth/post-login";
     } catch (err) {
       console.error(err);
       setError("Could not sign in.");
@@ -66,7 +63,7 @@ export default function LoginPage() {
       <div className="w-full max-w-md rounded-3xl border border-stone-200 bg-white p-10 shadow-sm">
         <div className="mb-6 text-center">
           <h1 className="text-3xl font-bold text-stone-800">
-            Vine & Table Case Club
+            Vine &amp; Table Case Club
           </h1>
           <p className="mt-2 text-sm text-stone-500">Member Portal</p>
         </div>
@@ -108,11 +105,11 @@ export default function LoginPage() {
             </Link>
           </div>
 
-          {successMessage && (
+          {successMessage ? (
             <p className="text-sm text-emerald-600">{successMessage}</p>
-          )}
+          ) : null}
 
-          {error && <p className="text-sm text-red-500">{error}</p>}
+          {error ? <p className="text-sm text-red-500">{error}</p> : null}
 
           <button
             type="submit"

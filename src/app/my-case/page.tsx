@@ -33,6 +33,8 @@ type WineCase = {
   target_price_cap?: number | null;
   finalize_deadline?: string | null;
   pickup_date?: string | null;
+  member_email?: string | null;
+  template_case_id?: string | null;
 };
 
 type WineRecord = {
@@ -255,17 +257,17 @@ function WineDetailModal({
         </div>
 
         <div className="mt-4 space-y-2 text-sm">
-          {wine.type && (
+          {wine.type ? (
             <p className="text-stone-600">
               Type: <span className="font-semibold text-stone-800">{wine.type}</span>
             </p>
-          )}
-          {wine.region && (
+          ) : null}
+          {wine.region ? (
             <p className="text-stone-600">
               Region:{" "}
               <span className="font-semibold text-stone-800">{wine.region}</span>
             </p>
-          )}
+          ) : null}
           <p className="text-stone-600">
             Club price:{" "}
             <span className="font-semibold text-stone-800">

@@ -16,6 +16,9 @@ export type MemberCaseSummary = {
   status: CaseStatus;
   created_at: string;
   picked_up_at: string | null;
+  charged: boolean | null;
+  charged_at: string | null;
+  square_payment_id: string | null;
 };
 
 function getErrorMessage(error: unknown) {
@@ -45,14 +48,20 @@ function logSupabaseError(label: string, error: unknown) {
   console.error(label, getErrorMessage(error), error);
 }
 
+function normalizeEmail(email?: string | null) {
+  return email?.trim().toLowerCase() ?? "";
+}
+
 /**
  * Returns the latest case (by created_at) for each member email.
+ * This normalizes emails in JavaScript so mismatched casing in the DB
+ * does not prevent cases from appearing for members.
  */
 export async function getLatestCasesForMemberEmails(emails: string[]) {
   const supabase = createClient();
 
   const cleanEmails = Array.from(
-    new Set(emails.map((e) => e.trim().toLowerCase()).filter((e) => e.length > 0))
+    new Set(emails.map((e) => normalizeEmail(e)).filter((e) => e.length > 0))
   );
 
   if (cleanEmails.length === 0) {
@@ -70,10 +79,13 @@ export async function getLatestCasesForMemberEmails(emails: string[]) {
         tier,
         status,
         created_at,
-        picked_up_at
+        picked_up_at,
+        charged,
+        charged_at,
+        square_payment_id
       `
     )
-    .in("member_email", cleanEmails)
+    .not("member_email", "is", null)
     .order("created_at", { ascending: false });
 
   if (error) {
@@ -84,11 +96,13 @@ export async function getLatestCasesForMemberEmails(emails: string[]) {
   const map = new Map<string, MemberCaseSummary>();
 
   for (const row of (data ?? []) as MemberCaseSummary[]) {
-    const email = row.member_email?.toLowerCase();
-    if (!email) continue;
+    const normalizedRowEmail = normalizeEmail(row.member_email);
 
-    if (!map.has(email)) {
-      map.set(email, row);
+    if (!normalizedRowEmail) continue;
+    if (!cleanEmails.includes(normalizedRowEmail)) continue;
+
+    if (!map.has(normalizedRowEmail)) {
+      map.set(normalizedRowEmail, row);
     }
   }
 
@@ -114,7 +128,10 @@ export async function markCasePickedUp(caseId: string) {
         tier,
         status,
         created_at,
-        picked_up_at
+        picked_up_at,
+        charged,
+        charged_at,
+        square_payment_id
       `
     )
     .single();
@@ -146,7 +163,10 @@ export async function undoCasePickedUp(caseId: string) {
         tier,
         status,
         created_at,
-        picked_up_at
+        picked_up_at,
+        charged,
+        charged_at,
+        square_payment_id
       `
     )
     .single();
