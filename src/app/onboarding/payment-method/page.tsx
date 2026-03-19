@@ -4,26 +4,28 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
-declare global {
-  interface Window {
-    Square?: {
-      payments: (
-        appId: string,
-        locationId: string
-      ) => Promise<{
-        card: () => Promise<{
-          attach: (selector: string) => Promise<void>;
-          tokenize: () => Promise<{
-            status: string;
-            token?: string;
-            errors?: unknown[];
-          }>;
-          destroy?: () => Promise<void>;
-        }>;
-      }>;
-    };
-  }
-}
+type SquareCard = {
+  attach: (selectorOrElement: string | HTMLElement) => Promise<void>;
+  tokenize: () => Promise<{
+    status: string;
+    token?: string;
+    errors?: unknown[];
+  }>;
+  destroy?: () => Promise<void>;
+};
+
+type SquarePayments = {
+  card: () => Promise<SquareCard>;
+};
+
+type SquareWindow = Window & {
+  Square?: {
+    payments: (
+      appId: string,
+      locationId: string
+    ) => Promise<SquarePayments>;
+  };
+};
 
 const squareAppId = process.env.NEXT_PUBLIC_SQUARE_APP_ID ?? "";
 const squareLocationId = process.env.NEXT_PUBLIC_SQUARE_LOCATION_ID ?? "";
@@ -38,14 +40,8 @@ export default function PaymentMethodOnboardingPage() {
   const [error, setError] = useState("");
   const [memberEmail, setMemberEmail] = useState("");
 
-  const cardRef = useRef<{
-    tokenize: () => Promise<{
-      status: string;
-      token?: string;
-      errors?: unknown[];
-    }>;
-    destroy?: () => Promise<void>;
-  } | null>(null);
+  const cardContainerRef = useRef<HTMLDivElement | null>(null);
+  const cardRef = useRef<SquareCard | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -85,29 +81,34 @@ export default function PaymentMethodOnboardingPage() {
           return;
         }
 
-        await loadSquareScript();
+        if (!cardContainerRef.current) {
+          setError("Payment form container could not be created.");
+          return;
+        }
 
-        if (!window.Square) {
+        const squareWindow = window as SquareWindow;
+
+        if (!squareWindow.Square) {
           setError("Square payment form failed to load.");
           return;
         }
 
-        const payments = await window.Square.payments(
+        const payments = await squareWindow.Square.payments(
           squareAppId,
           squareLocationId
         );
 
-        const card = await payments.card();
-        await card.attach("#square-card-container");
+        const squareCard = await payments.card();
+        await squareCard.attach(cardContainerRef.current);
 
         if (!mounted) {
-          if (card.destroy) {
-            await card.destroy();
+          if (squareCard.destroy) {
+            await squareCard.destroy();
           }
           return;
         }
 
-        cardRef.current = card;
+        cardRef.current = squareCard;
         setReady(true);
       } catch (err) {
         console.error(err);
@@ -130,44 +131,9 @@ export default function PaymentMethodOnboardingPage() {
           // no-op
         });
       }
+      cardRef.current = null;
     };
   }, [router, supabase]);
-
-  async function loadSquareScript() {
-    const existing = document.querySelector(
-      'script[data-square-web-payments="true"]'
-    ) as HTMLScriptElement | null;
-
-    if (existing) {
-      if (window.Square) return;
-
-      await new Promise<void>((resolve, reject) => {
-        existing.addEventListener("load", () => resolve(), { once: true });
-        existing.addEventListener(
-          "error",
-          () => reject(new Error("Failed to load Square script.")),
-          { once: true }
-        );
-      });
-
-      return;
-    }
-
-    const script = document.createElement("script");
-    script.dataset.squareWebPayments = "true";
-    script.src =
-      squareAppId.startsWith("sandbox-") ||
-      process.env.NODE_ENV !== "production"
-        ? "https://sandbox.web.squarecdn.com/v1/square.js"
-        : "https://web.squarecdn.com/v1/square.js";
-
-    await new Promise<void>((resolve, reject) => {
-      script.onload = () => resolve();
-      script.onerror = () =>
-        reject(new Error("Failed to load Square script."));
-      document.head.appendChild(script);
-    });
-  }
 
   async function handleSaveCard() {
     try {
@@ -246,7 +212,7 @@ export default function PaymentMethodOnboardingPage() {
 
           <div className="mt-8 rounded-3xl border border-stone-200 bg-stone-50 p-5">
             <div
-              id="square-card-container"
+              ref={cardContainerRef}
               className="min-h-[120px] rounded-2xl bg-white p-4"
             />
           </div>
