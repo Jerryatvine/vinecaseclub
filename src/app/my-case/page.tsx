@@ -316,6 +316,30 @@ function getErrorMessage(error: unknown) {
   return "Unknown error";
 }
 
+function preserveCaseItemOrder(
+  previousItems: CaseItem[],
+  nextItems: CaseItem[]
+): CaseItem[] {
+  const previousOrder = new Map(previousItems.map((item, index) => [item.id, index]));
+
+  return [...nextItems].sort((a, b) => {
+    const aIndex = previousOrder.get(a.id);
+    const bIndex = previousOrder.get(b.id);
+
+    const aKnown = aIndex !== undefined;
+    const bKnown = bIndex !== undefined;
+
+    if (aKnown && bKnown) {
+      return aIndex - bIndex;
+    }
+
+    if (aKnown) return -1;
+    if (bKnown) return 1;
+
+    return 0;
+  });
+}
+
 export default function MyCasePage() {
   const supabase = useMemo(() => createClient(), []);
 
@@ -390,7 +414,7 @@ export default function MyCasePage() {
 
       try {
         const items = await getCaseItems(selectedCaseId);
-        setCaseItems(items);
+        setCaseItems((prev) => preserveCaseItemOrder(prev, items));
       } catch (err) {
         console.error(err);
         setError(getErrorMessage(err));
@@ -451,7 +475,7 @@ export default function MyCasePage() {
   async function reloadCurrentCaseItems() {
     if (!selectedCaseId) return;
     const items = await getCaseItems(selectedCaseId);
-    setCaseItems(items);
+    setCaseItems((prev) => preserveCaseItemOrder(prev, items));
   }
 
   async function handleRemoveWine(item: CaseItem) {
@@ -459,7 +483,9 @@ export default function MyCasePage() {
       setUpdatingItem(item.id);
       setError("");
       setSuccess("");
+
       await deleteCaseItem(item.id);
+      setCaseItems((prev) => prev.filter((ci) => ci.id !== item.id));
       await reloadCurrentCaseItems();
     } catch (err) {
       console.error(err);
@@ -480,14 +506,26 @@ export default function MyCasePage() {
 
       if (newQty <= 0) {
         await deleteCaseItem(item.id);
+        setCaseItems((prev) => prev.filter((ci) => ci.id !== item.id));
       } else {
         await updateCaseItem(item.id, { quantity: newQty });
+        setCaseItems((prev) =>
+          prev.map((ci) =>
+            ci.id === item.id
+              ? {
+                  ...ci,
+                  quantity: newQty,
+                }
+              : ci
+          )
+        );
       }
 
       await reloadCurrentCaseItems();
     } catch (err) {
       console.error(err);
       setError(getErrorMessage(err));
+      await reloadCurrentCaseItems();
     } finally {
       setUpdatingItem(null);
     }
