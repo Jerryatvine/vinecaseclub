@@ -182,7 +182,7 @@ export async function POST(req: Request) {
       sourceId: typedMember.square_card_id,
       customerId: typedMember.square_customer_id ?? undefined,
       amountMoney: {
-        amount: amountInCents,
+        amount: BigInt(amountInCents),
         currency: "USD",
       },
     });
