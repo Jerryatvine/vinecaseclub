@@ -16,12 +16,18 @@ export default function SignupPage() {
   const [password, setPassword] = useState("");
   const [membershipTier, setMembershipTier] =
     useState<MembershipTier>("economy");
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
 
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
+
+    if (!acceptedTerms) {
+      setError("You must agree to the Terms & Conditions to continue.");
+      return;
+    }
 
     try {
       setSaving(true);
@@ -40,6 +46,7 @@ export default function SignupPage() {
           data: {
             full_name: name,
             membership_tier: membershipTier,
+            accepted_terms: true,
           },
         },
       });
@@ -128,6 +135,27 @@ export default function SignupPage() {
               <option value="premium">Premium Case</option>
             </select>
           </div>
+
+          <label className="flex items-start gap-3 rounded-2xl border border-stone-200 bg-stone-50 p-3 text-sm text-stone-700">
+            <input
+              type="checkbox"
+              checked={acceptedTerms}
+              onChange={(e) => setAcceptedTerms(e.target.checked)}
+              className="mt-1 h-4 w-4 rounded border-stone-300 text-[#263330] focus:ring-[#263330]"
+              required
+            />
+            <span>
+              I agree to the{" "}
+              <Link
+                href="/terms"
+                target="_blank"
+                className="font-medium text-stone-900 underline"
+              >
+                Terms & Conditions
+              </Link>
+              .
+            </span>
+          </label>
 
           {error && <p className="text-sm text-red-600">{error}</p>}
 
