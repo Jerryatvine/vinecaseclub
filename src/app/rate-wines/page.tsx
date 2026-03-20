@@ -26,6 +26,7 @@ type WineItem = {
   winery: string;
   vintage?: number | null;
   image_url?: string | null;
+  tasting_notes?: string | null;
 };
 
 type MemberRow = {
@@ -450,6 +451,17 @@ export default function RateWinesPage() {
                               {wine.vintage ? ` · ${wine.vintage}` : ""}
                             </p>
 
+                            {wine.tasting_notes && (
+                              <div className="mt-3 rounded-2xl bg-stone-50 p-3">
+                                <p className="text-xs font-semibold uppercase tracking-wide text-stone-500">
+                                  Winery tasting notes
+                                </p>
+                                <p className="mt-1 whitespace-pre-line text-sm leading-6 text-stone-600">
+                                  {wine.tasting_notes}
+                                </p>
+                              </div>
+                            )}
+
                             {!isEditing && existingRating && (
                               <div className="mt-2 flex items-center gap-3">
                                 <StarRating rating={existingRating.rating} readOnly size="sm" />
@@ -475,7 +487,7 @@ export default function RateWinesPage() {
                               <div className="mt-3 space-y-3">
                                 <StarRating rating={ratingValue} onChange={setRatingValue} />
                                 <Textarea
-                                  placeholder="Tasting notes (optional)..."
+                                  placeholder="Your tasting notes (optional)..."
                                   value={ratingNotes}
                                   onChange={(e) => setRatingNotes(e.target.value)}
                                   className="h-20 text-sm"

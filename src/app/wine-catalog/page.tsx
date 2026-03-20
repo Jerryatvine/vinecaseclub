@@ -17,6 +17,7 @@ type WineItem = {
   available_for_club?: boolean;
   varietal?: string;
   region?: string;
+  tasting_notes?: string | null;
   type?: "red" | "white" | "rosé" | "sparkling" | "dessert" | "orange";
 };
 
@@ -71,6 +72,12 @@ function WineBottleCard({
             </span>
           )}
         </div>
+
+        {wine.tasting_notes && (
+          <p className="mt-3 line-clamp-3 text-sm leading-5 text-stone-600">
+            {wine.tasting_notes}
+          </p>
+        )}
 
         {showPricing && (
           <div className="mt-3 flex items-center gap-2 text-sm">
@@ -169,6 +176,15 @@ function WineDetailModal({
             </span>
           </p>
         </div>
+
+        {wine.tasting_notes && (
+          <div className="mt-5 rounded-2xl bg-stone-50 p-4">
+            <h3 className="text-sm font-semibold text-stone-800">Tasting Notes</h3>
+            <p className="mt-2 whitespace-pre-line text-sm leading-6 text-stone-600">
+              {wine.tasting_notes}
+            </p>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -210,7 +226,8 @@ export default function WineCatalogPage() {
         w.name?.toLowerCase().includes(q) ||
         w.winery?.toLowerCase().includes(q) ||
         w.varietal?.toLowerCase().includes(q) ||
-        w.region?.toLowerCase().includes(q);
+        w.region?.toLowerCase().includes(q) ||
+        w.tasting_notes?.toLowerCase().includes(q);
 
       const matchType = typeFilter === "all" || w.type === typeFilter;
 
@@ -259,7 +276,7 @@ export default function WineCatalogPage() {
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400" />
             <input
-              placeholder="Search wines, wineries, regions..."
+              placeholder="Search wines, wineries, regions, tasting notes..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="w-full rounded-2xl border border-stone-300 bg-white py-2.5 pl-10 pr-3 text-sm text-stone-800 outline-none"

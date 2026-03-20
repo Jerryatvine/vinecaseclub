@@ -13,6 +13,7 @@ export type WineInput = {
   club_price?: number | null;
   inventory?: number | null;
   available_for_club?: boolean;
+  tasting_notes?: string | null;
 };
 
 function getErrorMessage(error: unknown) {

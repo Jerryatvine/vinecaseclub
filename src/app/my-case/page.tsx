@@ -50,6 +50,7 @@ type WineRecord = {
   available_for_club?: boolean | null;
   type?: string | null;
   region?: string | null;
+  tasting_notes?: string | null;
 };
 
 type CaseItem = {
@@ -285,6 +286,15 @@ function WineDetailModal({
             <span className="font-semibold text-stone-800">{wine.inventory ?? 0}</span>
           </p>
         </div>
+
+        {wine.tasting_notes ? (
+          <div className="mt-4 rounded-2xl bg-stone-50 p-4">
+            <p className="text-sm font-semibold text-stone-800">Tasting Notes</p>
+            <p className="mt-2 whitespace-pre-line text-sm leading-6 text-stone-600">
+              {wine.tasting_notes}
+            </p>
+          </div>
+        ) : null}
       </div>
     </div>
   );

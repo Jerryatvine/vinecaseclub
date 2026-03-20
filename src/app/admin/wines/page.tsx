@@ -41,6 +41,7 @@ type WineItem = {
   club_price?: number | null;
   inventory?: number | null;
   available_for_club?: boolean;
+  tasting_notes?: string | null;
 };
 
 type WineFormState = {
@@ -56,6 +57,7 @@ type WineFormState = {
   club_price: string;
   inventory: string;
   available_for_club: boolean;
+  tasting_notes: string;
 };
 
 const emptyForm: WineFormState = {
@@ -71,6 +73,7 @@ const emptyForm: WineFormState = {
   club_price: "",
   inventory: "",
   available_for_club: true,
+  tasting_notes: "",
 };
 
 function getErrorMessage(error: unknown) {
@@ -232,6 +235,7 @@ export default function AdminWinesPage() {
       club_price: wine.club_price?.toString() ?? "",
       inventory: wine.inventory?.toString() ?? "",
       available_for_club: wine.available_for_club ?? true,
+      tasting_notes: wine.tasting_notes ?? "",
     });
   }
 
@@ -383,14 +387,6 @@ export default function AdminWinesPage() {
       setSaving(true);
       setError("");
 
-      const supabase = createClient();
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-
-      console.log("session?", session);
-      console.log("user?", session?.user);
-
       const payload = {
         name: form.name,
         winery: form.winery || null,
@@ -404,6 +400,7 @@ export default function AdminWinesPage() {
         club_price: form.club_price ? Number(form.club_price) : null,
         inventory: form.inventory ? Number(form.inventory) : 0,
         available_for_club: form.available_for_club,
+        tasting_notes: form.tasting_notes.trim() || null,
       };
 
       if (editingId) {
@@ -428,7 +425,7 @@ export default function AdminWinesPage() {
         <div>
           <h1 className="text-3xl font-bold text-stone-800">Manage Wines</h1>
           <p className="mt-2 text-sm text-stone-500">
-            Add wines, edit pricing, adjust inventory, and upload wine images.
+            Add wines, edit pricing, adjust inventory, upload wine images, and add tasting notes.
           </p>
         </div>
 
@@ -607,6 +604,13 @@ export default function AdminWinesPage() {
                 onChange={(e) => setForm({ ...form, inventory: e.target.value })}
               />
 
+              <textarea
+                className="min-h-[120px] w-full rounded-2xl border border-stone-300 px-3 py-2.5 text-sm outline-none"
+                placeholder="Tasting notes"
+                value={form.tasting_notes}
+                onChange={(e) => setForm({ ...form, tasting_notes: e.target.value })}
+              />
+
               <label className="flex items-center gap-3 text-sm text-stone-700">
                 <input
                   type="checkbox"
@@ -692,6 +696,11 @@ export default function AdminWinesPage() {
                               <p className="text-xs text-stone-500">
                                 {wine.winery || "—"}
                               </p>
+                              {wine.tasting_notes ? (
+                                <p className="mt-1 line-clamp-2 max-w-[240px] text-xs text-stone-500">
+                                  {wine.tasting_notes}
+                                </p>
+                              ) : null}
                             </div>
                           </div>
                         </td>
