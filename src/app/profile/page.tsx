@@ -19,6 +19,11 @@ export default function ProfilePage() {
   const [fulfillmentType, setFulfillmentType] =
     useState<FulfillmentType>("pickup");
   const [zipCode, setZipCode] = useState("");
+  const [addressLine1, setAddressLine1] = useState("");
+  const [addressLine2, setAddressLine2] = useState("");
+  const [city, setCity] = useState("");
+  const [stateValue, setStateValue] = useState("");
+  const [deliveryNotes, setDeliveryNotes] = useState("");
 
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -50,6 +55,11 @@ export default function ProfilePage() {
         setMember(foundMember);
         setFulfillmentType(foundMember.fulfillment_type ?? "pickup");
         setZipCode(foundMember.zip_code ?? "");
+        setAddressLine1(foundMember.address_line_1 ?? "");
+        setAddressLine2(foundMember.address_line_2 ?? "");
+        setCity(foundMember.city ?? "");
+        setStateValue(foundMember.state ?? "");
+        setDeliveryNotes(foundMember.delivery_notes ?? "");
       } catch (err) {
         console.error(err);
         setError("Could not load your profile.");
@@ -66,20 +76,38 @@ export default function ProfilePage() {
 
     if (!member) return;
 
+    if (fulfillmentType === "delivery") {
+      if (!addressLine1.trim() || !city.trim() || !stateValue.trim() || !zipCode.trim()) {
+        setError(
+          "For delivery, please enter your address, city, state, and zip code."
+        );
+        return;
+      }
+    }
+
     try {
       setSaving(true);
       setError("");
       setSuccess("");
 
-      const updated = await updateMemberFulfillment(
-        member.id,
-        fulfillmentType,
-        zipCode.trim()
-      );
+      const updated = await updateMemberFulfillment(member.id, {
+        fulfillment_type: fulfillmentType,
+        zip_code: zipCode.trim(),
+        address_line_1: addressLine1,
+        address_line_2: addressLine2,
+        city,
+        state: stateValue,
+        delivery_notes: deliveryNotes,
+      });
 
       setMember(updated);
       setFulfillmentType(updated.fulfillment_type ?? "pickup");
       setZipCode(updated.zip_code ?? "");
+      setAddressLine1(updated.address_line_1 ?? "");
+      setAddressLine2(updated.address_line_2 ?? "");
+      setCity(updated.city ?? "");
+      setStateValue(updated.state ?? "");
+      setDeliveryNotes(updated.delivery_notes ?? "");
 
       if (updated.fulfillment_type === "delivery" && updated.delivery_approved) {
         setSuccess("Your delivery preference has been updated and approved.");
@@ -150,7 +178,7 @@ export default function ProfilePage() {
       <div className="mx-auto max-w-2xl rounded-3xl border border-stone-200 bg-white p-8 shadow-sm">
         <h1 className="text-3xl font-bold text-stone-800">Profile</h1>
         <p className="mt-2 text-sm text-stone-500">
-          Manage your fulfillment preference.
+          Manage your fulfillment preference and delivery address.
         </p>
 
         {error && (
@@ -165,9 +193,7 @@ export default function ProfilePage() {
           </div>
         )}
 
-        <div className="mt-6">
-          {renderDeliveryStatus()}
-        </div>
+        <div className="mt-6">{renderDeliveryStatus()}</div>
 
         <form onSubmit={handleSubmit} className="mt-6 space-y-4">
           <div>
@@ -204,10 +230,79 @@ export default function ProfilePage() {
           </div>
 
           {fulfillmentType === "delivery" && (
-            <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-700">
-              Delivery is currently auto-approved for zip code 83843. Other zip
-              codes can be reviewed individually.
-            </div>
+            <>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-stone-800">
+                  Address line 1
+                </label>
+                <input
+                  type="text"
+                  value={addressLine1}
+                  onChange={(e) => setAddressLine1(e.target.value)}
+                  placeholder="Street address"
+                  className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-3 py-2.5 text-sm text-stone-900 outline-none focus:border-[#263330] focus:ring-2 focus:ring-[#263330]/20"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-medium text-stone-800">
+                  Address line 2
+                </label>
+                <input
+                  type="text"
+                  value={addressLine2}
+                  onChange={(e) => setAddressLine2(e.target.value)}
+                  placeholder="Apartment, suite, unit, etc. (optional)"
+                  className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-3 py-2.5 text-sm text-stone-900 outline-none focus:border-[#263330] focus:ring-2 focus:ring-[#263330]/20"
+                />
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-stone-800">
+                    City
+                  </label>
+                  <input
+                    type="text"
+                    value={city}
+                    onChange={(e) => setCity(e.target.value)}
+                    placeholder="City"
+                    className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-3 py-2.5 text-sm text-stone-900 outline-none focus:border-[#263330] focus:ring-2 focus:ring-[#263330]/20"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-stone-800">
+                    State
+                  </label>
+                  <input
+                    type="text"
+                    maxLength={2}
+                    value={stateValue}
+                    onChange={(e) => setStateValue(e.target.value.toUpperCase())}
+                    placeholder="ID"
+                    className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-3 py-2.5 text-sm text-stone-900 outline-none focus:border-[#263330] focus:ring-2 focus:ring-[#263330]/20"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-medium text-stone-800">
+                  Delivery notes
+                </label>
+                <textarea
+                  value={deliveryNotes}
+                  onChange={(e) => setDeliveryNotes(e.target.value)}
+                  placeholder="Gate code, parking notes, preferred drop-off instructions, etc. (optional)"
+                  className="min-h-[100px] w-full rounded-2xl border border-stone-300 bg-stone-50 px-3 py-2.5 text-sm text-stone-900 outline-none focus:border-[#263330] focus:ring-2 focus:ring-[#263330]/20"
+                />
+              </div>
+
+              <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-700">
+                Delivery is currently auto-approved for zip code 83843. Other zip
+                codes can be reviewed individually.
+              </div>
+            </>
           )}
 
           <button

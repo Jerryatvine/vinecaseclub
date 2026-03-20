@@ -16,6 +16,11 @@ export type Member = {
   zip_code?: string | null;
   delivery_approved?: boolean | null;
   delivery_review_required?: boolean | null;
+  address_line_1?: string | null;
+  address_line_2?: string | null;
+  city?: string | null;
+  state?: string | null;
+  delivery_notes?: string | null;
 };
 
 function getErrorMessage(error: unknown) {
@@ -48,10 +53,7 @@ function logSupabaseError(label: string, error: unknown) {
   console.error(label, getErrorMessage(error), error);
 }
 
-function normalizeDeliveryState(
-  fulfillment_type: FulfillmentType,
-  zip_code: string
-) {
+function normalizeDeliveryState(fulfillment_type: FulfillmentType, zip_code: string) {
   const trimmedZip = zip_code.trim();
 
   if (fulfillment_type === "pickup") {
@@ -166,12 +168,31 @@ export async function updateMemberTier(
 
 export async function updateMemberFulfillment(
   id: string,
-  fulfillment_type: FulfillmentType,
-  zip_code: string
+  input: {
+    fulfillment_type: FulfillmentType;
+    zip_code: string;
+    address_line_1?: string;
+    address_line_2?: string;
+    city?: string;
+    state?: string;
+    delivery_notes?: string;
+  }
 ) {
   const supabase = createClient();
 
-  const payload = normalizeDeliveryState(fulfillment_type, zip_code);
+  const deliveryState = normalizeDeliveryState(
+    input.fulfillment_type,
+    input.zip_code
+  );
+
+  const payload = {
+    ...deliveryState,
+    address_line_1: input.address_line_1?.trim() || null,
+    address_line_2: input.address_line_2?.trim() || null,
+    city: input.city?.trim() || null,
+    state: input.state?.trim() || null,
+    delivery_notes: input.delivery_notes?.trim() || null,
+  };
 
   const { data, error } = await supabase
     .from("members")

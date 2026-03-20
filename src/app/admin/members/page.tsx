@@ -32,6 +32,11 @@ type Member = {
   zip_code?: string | null;
   delivery_approved?: boolean | null;
   delivery_review_required?: boolean | null;
+  address_line_1?: string | null;
+  address_line_2?: string | null;
+  city?: string | null;
+  state?: string | null;
+  delivery_notes?: string | null;
 };
 
 function formatDate(dateString?: string | null) {
@@ -130,6 +135,28 @@ function deliveryStatusClasses(member: Member) {
   }
 
   return "bg-blue-100 text-blue-700";
+}
+
+function formatFullAddress(member: Member) {
+  const line1 = member.address_line_1?.trim() || "";
+  const line2 = member.address_line_2?.trim() || "";
+  const city = member.city?.trim() || "";
+  const state = member.state?.trim() || "";
+  const zip = member.zip_code?.trim() || "";
+
+  const cityStateZip = [city, state].filter(Boolean).join(", ");
+  const finalLine = [cityStateZip, zip].filter(Boolean).join(" ");
+
+  return [line1, line2, finalLine].filter(Boolean);
+}
+
+function hasCompleteDeliveryAddress(member: Member) {
+  return Boolean(
+    member.address_line_1?.trim() &&
+      member.city?.trim() &&
+      member.state?.trim() &&
+      member.zip_code?.trim()
+  );
 }
 
 export default function AdminMembersPage() {
@@ -246,6 +273,20 @@ export default function AdminMembersPage() {
   }
 
   async function handleApproveDelivery(memberId: string) {
+    const member = members.find((m) => m.id === memberId);
+
+    if (!member) {
+      setError("Could not find member.");
+      return;
+    }
+
+    if (!hasCompleteDeliveryAddress(member)) {
+      setError(
+        "Delivery cannot be approved until address line 1, city, state, and zip code are complete."
+      );
+      return;
+    }
+
     try {
       setDeliverySavingId(memberId);
       setError("");
@@ -438,8 +479,8 @@ export default function AdminMembersPage() {
           <div>
             <h1 className="text-3xl font-bold text-stone-800">Members</h1>
             <p className="mt-2 text-sm text-stone-500">
-              View member accounts, delivery requests, roles, case tiers, payment status, and pickup
-              status.
+              View member accounts, delivery requests, full delivery addresses,
+              roles, case tiers, payment status, and pickup status.
             </p>
           </div>
 
@@ -471,8 +512,9 @@ export default function AdminMembersPage() {
                 <th className="px-4 py-3 font-medium">Email</th>
                 <th className="px-4 py-3 font-medium">Joined</th>
                 <th className="px-4 py-3 font-medium">Fulfillment</th>
-                <th className="px-4 py-3 font-medium">Zip</th>
                 <th className="px-4 py-3 font-medium">Delivery Status</th>
+                <th className="px-4 py-3 font-medium">Delivery Address</th>
+                <th className="px-4 py-3 font-medium">Delivery Notes</th>
                 <th className="px-4 py-3 font-medium">Latest Case</th>
                 <th className="px-4 py-3 font-medium">Case Status</th>
                 <th className="px-4 py-3 font-medium">Payment</th>
@@ -487,13 +529,13 @@ export default function AdminMembersPage() {
             <tbody>
               {unreadable ? (
                 <tr>
-                  <td colSpan={14} className="px-4 py-8 text-center text-stone-500">
+                  <td colSpan={15} className="px-4 py-8 text-center text-stone-500">
                     Loading members...
                   </td>
                 </tr>
               ) : members.length === 0 ? (
                 <tr>
-                  <td colSpan={14} className="px-4 py-8 text-center text-stone-500">
+                  <td colSpan={15} className="px-4 py-8 text-center text-stone-500">
                     No members found.
                   </td>
                 </tr>
@@ -514,14 +556,19 @@ export default function AdminMembersPage() {
                   const canChargeCard =
                     !!c?.id && status === "ready_for_pickup" && !c?.charged;
 
+                  const addressComplete = hasCompleteDeliveryAddress(member);
+
                   const canApproveDelivery =
                     member.fulfillment_type === "delivery" &&
-                    !member.delivery_approved;
+                    !member.delivery_approved &&
+                    addressComplete;
 
                   const canRejectDelivery = member.fulfillment_type === "delivery";
 
+                  const addressLines = formatFullAddress(member);
+
                   return (
-                    <tr key={member.id} className="border-b border-stone-100">
+                    <tr key={member.id} className="border-b border-stone-100 align-top">
                       <td className="px-4 py-4 text-stone-800">{member.name}</td>
                       <td className="px-4 py-4 text-stone-700">{member.email}</td>
                       <td className="px-4 py-4 text-stone-700">
@@ -530,17 +577,52 @@ export default function AdminMembersPage() {
                       <td className="px-4 py-4 text-stone-700">
                         {fulfillmentLabel(member)}
                       </td>
-                      <td className="px-4 py-4 text-stone-700">
-                        {member.zip_code || "—"}
-                      </td>
                       <td className="px-4 py-4">
-                        <span
-                          className={`inline-flex rounded-full px-3 py-1 text-xs font-medium ${deliveryStatusClasses(
-                            member
-                          )}`}
-                        >
-                          {deliveryStatusLabel(member)}
-                        </span>
+                        <div className="space-y-2">
+                          <span
+                            className={`inline-flex rounded-full px-3 py-1 text-xs font-medium ${deliveryStatusClasses(
+                              member
+                            )}`}
+                          >
+                            {deliveryStatusLabel(member)}
+                          </span>
+
+                          {member.fulfillment_type === "delivery" && !addressComplete && (
+                            <p className="max-w-[200px] text-xs text-red-600">
+                              Missing required address fields. Delivery cannot be approved yet.
+                            </p>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-4 py-4 text-stone-700">
+                        {member.fulfillment_type === "delivery" ? (
+                          addressLines.length > 0 ? (
+                            <div className="space-y-1">
+                              {addressLines.map((line, index) => (
+                                <p key={index} className="max-w-[220px] break-words">
+                                  {line}
+                                </p>
+                              ))}
+                            </div>
+                          ) : (
+                            "—"
+                          )
+                        ) : (
+                          "—"
+                        )}
+                      </td>
+                      <td className="px-4 py-4 text-stone-700">
+                        {member.fulfillment_type === "delivery" ? (
+                          member.delivery_notes ? (
+                            <p className="max-w-[220px] whitespace-pre-line break-words text-sm">
+                              {member.delivery_notes}
+                            </p>
+                          ) : (
+                            "—"
+                          )
+                        ) : (
+                          "—"
+                        )}
                       </td>
                       <td className="px-4 py-4 text-stone-700">{caseLabel(c)}</td>
                       <td className="px-4 py-4 text-stone-700">
@@ -600,6 +682,17 @@ export default function AdminMembersPage() {
                             disabled={!canApproveDelivery || isDeliverySaving}
                             onClick={() => handleApproveDelivery(member.id)}
                             className="rounded-2xl bg-blue-700 px-3 py-2 text-xs font-medium text-white disabled:opacity-50"
+                            title={
+                              canApproveDelivery
+                                ? "Approve delivery"
+                                : member.fulfillment_type !== "delivery"
+                                ? "Member is not set to delivery"
+                                : member.delivery_approved
+                                ? "Delivery is already approved"
+                                : !addressComplete
+                                ? "Complete address is required before approving delivery"
+                                : "Delivery cannot be approved yet"
+                            }
                           >
                             {isDeliverySaving ? "Saving..." : "Approve delivery"}
                           </button>
