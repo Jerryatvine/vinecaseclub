@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
 type MembershipTier = "economy" | "premium";
+type FulfillmentType = "pickup" | "delivery";
 
 export default function SignupPage() {
   const router = useRouter();
@@ -16,7 +17,9 @@ export default function SignupPage() {
   const [password, setPassword] = useState("");
   const [membershipTier, setMembershipTier] =
     useState<MembershipTier>("economy");
-  const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [fulfillmentType, setFulfillmentType] =
+    useState<FulfillmentType>("pickup");
+  const [zipCode, setZipCode] = useState("");
 
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -24,14 +27,15 @@ export default function SignupPage() {
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
 
-    if (!acceptedTerms) {
-      setError("You must agree to the Terms & Conditions to continue.");
-      return;
-    }
-
     try {
       setSaving(true);
       setError("");
+
+      const trimmedZip = zipCode.trim();
+      const deliveryApproved =
+        fulfillmentType === "delivery" && trimmedZip === "83843";
+      const deliveryReviewRequired =
+        fulfillmentType === "delivery" && trimmedZip !== "83843";
 
       const emailRedirectTo =
         typeof window !== "undefined"
@@ -46,7 +50,10 @@ export default function SignupPage() {
           data: {
             full_name: name,
             membership_tier: membershipTier,
-            accepted_terms: true,
+            fulfillment_type: fulfillmentType,
+            zip_code: trimmedZip || null,
+            delivery_approved: deliveryApproved,
+            delivery_review_required: deliveryReviewRequired,
           },
         },
       });
@@ -56,8 +63,13 @@ export default function SignupPage() {
         return;
       }
 
-      const successMessage =
+      let successMessage =
         "Account created. Please check your email and click the confirmation link to complete signup.";
+
+      if (fulfillmentType === "delivery" && trimmedZip !== "83843") {
+        successMessage =
+          "Account created. Please check your email and click the confirmation link to complete signup. Your delivery request will be reviewed individually based on your zip code.";
+      }
 
       router.push(`/login?message=${encodeURIComponent(successMessage)}`);
       router.refresh();
@@ -74,7 +86,7 @@ export default function SignupPage() {
       <div className="w-full max-w-md rounded-3xl border border-stone-200 bg-white p-8 text-stone-900 shadow-sm">
         <h1 className="text-2xl font-bold text-stone-900">Create account</h1>
         <p className="mt-1 text-sm text-stone-600">
-          Choose your membership tier to get the right wine case.
+          Choose your membership tier and preferred fulfillment option.
         </p>
 
         <form onSubmit={handleSubmit} className="mt-6 space-y-4">
@@ -136,26 +148,47 @@ export default function SignupPage() {
             </select>
           </div>
 
-          <label className="flex items-start gap-3 rounded-2xl border border-stone-200 bg-stone-50 p-3 text-sm text-stone-700">
+          <div>
+            <label className="mb-1 block text-sm font-medium text-stone-800">
+              Fulfillment option
+            </label>
+            <select
+              value={fulfillmentType}
+              onChange={(e) =>
+                setFulfillmentType(e.target.value as FulfillmentType)
+              }
+              className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-3 py-2.5 text-sm text-stone-900 outline-none focus:border-[#263330] focus:ring-2 focus:ring-[#263330]/20"
+            >
+              <option value="pickup">Pickup</option>
+              <option value="delivery">Delivery</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="mb-1 block text-sm font-medium text-stone-800">
+              Zip code
+            </label>
             <input
-              type="checkbox"
-              checked={acceptedTerms}
-              onChange={(e) => setAcceptedTerms(e.target.checked)}
-              className="mt-1 h-4 w-4 rounded border-stone-300 text-[#263330] focus:ring-[#263330]"
+              type="text"
+              inputMode="numeric"
+              maxLength={5}
+              className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-3 py-2.5 text-sm text-stone-900 outline-none placeholder-stone-400 focus:border-[#263330] focus:ring-2 focus:ring-[#263330]/20"
+              value={zipCode}
+              onChange={(e) =>
+                setZipCode(e.target.value.replace(/\D/g, "").slice(0, 5))
+              }
+              placeholder="83843"
               required
             />
-            <span>
-              I agree to the{" "}
-              <Link
-                href="/terms"
-                target="_blank"
-                className="font-medium text-stone-900 underline"
-              >
-                Terms & Conditions
-              </Link>
-              .
-            </span>
-          </label>
+          </div>
+
+          {fulfillmentType === "delivery" && (
+            <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-700">
+              {zipCode === "83843"
+                ? "Delivery is currently available for your zip code."
+                : "Delivery is currently prioritized for zip code 83843. If you sign up with another zip code, your request can be reviewed individually."}
+            </div>
+          )}
 
           {error && <p className="text-sm text-red-600">{error}</p>}
 
