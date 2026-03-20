@@ -3,9 +3,12 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import {
+  approveMemberDelivery,
   getAllMembers,
+  rejectMemberDelivery,
   updateMemberRole,
   updateMemberTier,
+  type FulfillmentType,
 } from "@/lib/services/member-service";
 import {
   getLatestCasesForMemberEmails,
@@ -25,6 +28,10 @@ type Member = {
   membership_tier: MembershipTier;
   user_id?: string | null;
   created_at?: string | null;
+  fulfillment_type?: FulfillmentType | null;
+  zip_code?: string | null;
+  delivery_approved?: boolean | null;
+  delivery_review_required?: boolean | null;
 };
 
 function formatDate(dateString?: string | null) {
@@ -81,6 +88,50 @@ function paymentStatusClasses(c?: MemberCaseSummary) {
   return "bg-amber-100 text-amber-700";
 }
 
+function fulfillmentLabel(member: Member) {
+  if (member.fulfillment_type === "delivery") {
+    return "Delivery";
+  }
+
+  if (member.fulfillment_type === "pickup") {
+    return "Pickup";
+  }
+
+  return "—";
+}
+
+function deliveryStatusLabel(member: Member) {
+  if (member.fulfillment_type !== "delivery") {
+    return "Pickup";
+  }
+
+  if (member.delivery_approved) {
+    return "Approved";
+  }
+
+  if (member.delivery_review_required) {
+    return "Pending review";
+  }
+
+  return "Requested";
+}
+
+function deliveryStatusClasses(member: Member) {
+  if (member.fulfillment_type !== "delivery") {
+    return "bg-stone-100 text-stone-700";
+  }
+
+  if (member.delivery_approved) {
+    return "bg-emerald-100 text-emerald-700";
+  }
+
+  if (member.delivery_review_required) {
+    return "bg-amber-100 text-amber-700";
+  }
+
+  return "bg-blue-100 text-blue-700";
+}
+
 export default function AdminMembersPage() {
   const [members, setMembers] = useState<Member[]>([]);
   const [latestCasesByEmail, setLatestCasesByEmail] = useState<
@@ -93,6 +144,7 @@ export default function AdminMembersPage() {
   const [savingId, setSavingId] = useState<string | null>(null);
   const [pickupSavingEmail, setPickupSavingEmail] = useState<string | null>(null);
   const [chargeSavingEmail, setChargeSavingEmail] = useState<string | null>(null);
+  const [deliverySavingId, setDeliverySavingId] = useState<string | null>(null);
 
   const [error, setError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
@@ -190,6 +242,48 @@ export default function AdminMembersPage() {
       setError("Could not update membership tier.");
     } finally {
       setSavingId(null);
+    }
+  }
+
+  async function handleApproveDelivery(memberId: string) {
+    try {
+      setDeliverySavingId(memberId);
+      setError("");
+      setSuccessMessage("");
+
+      const updated = await approveMemberDelivery(memberId);
+
+      setMembers((prev) =>
+        prev.map((member) => (member.id === memberId ? updated : member))
+      );
+
+      setSuccessMessage("Delivery approved.");
+    } catch (err) {
+      console.error(err);
+      setError("Could not approve delivery.");
+    } finally {
+      setDeliverySavingId(null);
+    }
+  }
+
+  async function handleRejectDelivery(memberId: string) {
+    try {
+      setDeliverySavingId(memberId);
+      setError("");
+      setSuccessMessage("");
+
+      const updated = await rejectMemberDelivery(memberId);
+
+      setMembers((prev) =>
+        prev.map((member) => (member.id === memberId ? updated : member))
+      );
+
+      setSuccessMessage("Delivery rejected. Member was switched to pickup.");
+    } catch (err) {
+      console.error(err);
+      setError("Could not reject delivery.");
+    } finally {
+      setDeliverySavingId(null);
     }
   }
 
@@ -344,7 +438,7 @@ export default function AdminMembersPage() {
           <div>
             <h1 className="text-3xl font-bold text-stone-800">Members</h1>
             <p className="mt-2 text-sm text-stone-500">
-              View member accounts, roles, case tiers, payment status, and pickup
+              View member accounts, delivery requests, roles, case tiers, payment status, and pickup
               status.
             </p>
           </div>
@@ -376,6 +470,9 @@ export default function AdminMembersPage() {
                 <th className="px-4 py-3 font-medium">Name</th>
                 <th className="px-4 py-3 font-medium">Email</th>
                 <th className="px-4 py-3 font-medium">Joined</th>
+                <th className="px-4 py-3 font-medium">Fulfillment</th>
+                <th className="px-4 py-3 font-medium">Zip</th>
+                <th className="px-4 py-3 font-medium">Delivery Status</th>
                 <th className="px-4 py-3 font-medium">Latest Case</th>
                 <th className="px-4 py-3 font-medium">Case Status</th>
                 <th className="px-4 py-3 font-medium">Payment</th>
@@ -390,13 +487,13 @@ export default function AdminMembersPage() {
             <tbody>
               {unreadable ? (
                 <tr>
-                  <td colSpan={11} className="px-4 py-8 text-center text-stone-500">
+                  <td colSpan={14} className="px-4 py-8 text-center text-stone-500">
                     Loading members...
                   </td>
                 </tr>
               ) : members.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="px-4 py-8 text-center text-stone-500">
+                  <td colSpan={14} className="px-4 py-8 text-center text-stone-500">
                     No members found.
                   </td>
                 </tr>
@@ -406,6 +503,7 @@ export default function AdminMembersPage() {
                   const c = latestCasesByEmail.get(email);
                   const isPickupSaving = pickupSavingEmail === email;
                   const isChargeSaving = chargeSavingEmail === email;
+                  const isDeliverySaving = deliverySavingId === member.id;
 
                   const status = c?.status ?? null;
                   const pickedUpAt = c?.picked_up_at ?? null;
@@ -416,12 +514,33 @@ export default function AdminMembersPage() {
                   const canChargeCard =
                     !!c?.id && status === "ready_for_pickup" && !c?.charged;
 
+                  const canApproveDelivery =
+                    member.fulfillment_type === "delivery" &&
+                    !member.delivery_approved;
+
+                  const canRejectDelivery = member.fulfillment_type === "delivery";
+
                   return (
                     <tr key={member.id} className="border-b border-stone-100">
                       <td className="px-4 py-4 text-stone-800">{member.name}</td>
                       <td className="px-4 py-4 text-stone-700">{member.email}</td>
                       <td className="px-4 py-4 text-stone-700">
                         {formatDate(member.created_at)}
+                      </td>
+                      <td className="px-4 py-4 text-stone-700">
+                        {fulfillmentLabel(member)}
+                      </td>
+                      <td className="px-4 py-4 text-stone-700">
+                        {member.zip_code || "—"}
+                      </td>
+                      <td className="px-4 py-4">
+                        <span
+                          className={`inline-flex rounded-full px-3 py-1 text-xs font-medium ${deliveryStatusClasses(
+                            member
+                          )}`}
+                        >
+                          {deliveryStatusLabel(member)}
+                        </span>
                       </td>
                       <td className="px-4 py-4 text-stone-700">{caseLabel(c)}</td>
                       <td className="px-4 py-4 text-stone-700">
@@ -476,6 +595,24 @@ export default function AdminMembersPage() {
 
                       <td className="px-4 py-4">
                         <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            disabled={!canApproveDelivery || isDeliverySaving}
+                            onClick={() => handleApproveDelivery(member.id)}
+                            className="rounded-2xl bg-blue-700 px-3 py-2 text-xs font-medium text-white disabled:opacity-50"
+                          >
+                            {isDeliverySaving ? "Saving..." : "Approve delivery"}
+                          </button>
+
+                          <button
+                            type="button"
+                            disabled={!canRejectDelivery || isDeliverySaving}
+                            onClick={() => handleRejectDelivery(member.id)}
+                            className="rounded-2xl border border-stone-300 bg-white px-3 py-2 text-xs font-medium text-stone-700 disabled:opacity-50"
+                          >
+                            Reject delivery
+                          </button>
+
                           <button
                             type="button"
                             disabled={!canChargeCard || isChargeSaving}

@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/client";
 
 export type MemberRole = "admin" | "member";
 export type MembershipTier = "economy" | "premium";
+export type FulfillmentType = "pickup" | "delivery";
 
 export type Member = {
   id: string;
@@ -11,6 +12,10 @@ export type Member = {
   membership_tier: MembershipTier;
   user_id?: string | null;
   created_at?: string | null;
+  fulfillment_type?: FulfillmentType | null;
+  zip_code?: string | null;
+  delivery_approved?: boolean | null;
+  delivery_review_required?: boolean | null;
 };
 
 function getErrorMessage(error: unknown) {
@@ -41,6 +46,31 @@ function getErrorMessage(error: unknown) {
 
 function logSupabaseError(label: string, error: unknown) {
   console.error(label, getErrorMessage(error), error);
+}
+
+function normalizeDeliveryState(
+  fulfillment_type: FulfillmentType,
+  zip_code: string
+) {
+  const trimmedZip = zip_code.trim();
+
+  if (fulfillment_type === "pickup") {
+    return {
+      fulfillment_type,
+      zip_code: trimmedZip || null,
+      delivery_approved: false,
+      delivery_review_required: false,
+    };
+  }
+
+  const isAutoApprovedZip = trimmedZip === "83843";
+
+  return {
+    fulfillment_type,
+    zip_code: trimmedZip || null,
+    delivery_approved: isAutoApprovedZip,
+    delivery_review_required: !isAutoApprovedZip,
+  };
 }
 
 export async function findMemberByUserId(userId: string) {
@@ -128,6 +158,74 @@ export async function updateMemberTier(
 
   if (error) {
     logSupabaseError("Error updating member tier:", error);
+    throw new Error(getErrorMessage(error));
+  }
+
+  return data as Member;
+}
+
+export async function updateMemberFulfillment(
+  id: string,
+  fulfillment_type: FulfillmentType,
+  zip_code: string
+) {
+  const supabase = createClient();
+
+  const payload = normalizeDeliveryState(fulfillment_type, zip_code);
+
+  const { data, error } = await supabase
+    .from("members")
+    .update(payload)
+    .eq("id", id)
+    .select("*")
+    .single();
+
+  if (error) {
+    logSupabaseError("Error updating member fulfillment:", error);
+    throw new Error(getErrorMessage(error));
+  }
+
+  return data as Member;
+}
+
+export async function approveMemberDelivery(id: string) {
+  const supabase = createClient();
+
+  const { data, error } = await supabase
+    .from("members")
+    .update({
+      fulfillment_type: "delivery",
+      delivery_approved: true,
+      delivery_review_required: false,
+    })
+    .eq("id", id)
+    .select("*")
+    .single();
+
+  if (error) {
+    logSupabaseError("Error approving member delivery:", error);
+    throw new Error(getErrorMessage(error));
+  }
+
+  return data as Member;
+}
+
+export async function rejectMemberDelivery(id: string) {
+  const supabase = createClient();
+
+  const { data, error } = await supabase
+    .from("members")
+    .update({
+      fulfillment_type: "pickup",
+      delivery_approved: false,
+      delivery_review_required: false,
+    })
+    .eq("id", id)
+    .select("*")
+    .single();
+
+  if (error) {
+    logSupabaseError("Error rejecting member delivery:", error);
     throw new Error(getErrorMessage(error));
   }
 

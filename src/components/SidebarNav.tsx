@@ -12,6 +12,7 @@ import {
   Package,
   Shield,
   Star,
+  User,
   Wine,
 } from "lucide-react";
 
@@ -21,6 +22,7 @@ const baseNavItems = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/my-case", label: "My Case", icon: Package },
   { href: "/account/billing", label: "Billing", icon: CreditCard },
+  { href: "/profile", label: "Profile", icon: User },
   { href: "/wine-catalog", label: "Wine Catalog", icon: Wine },
   { href: "/rate-wines", label: "Rate Wines", icon: Star },
   { href: "/notifications", label: "Notifications", icon: Bell },
