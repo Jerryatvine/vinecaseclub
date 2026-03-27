@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
@@ -43,7 +43,7 @@ declare global {
 const squareAppId = process.env.NEXT_PUBLIC_SQUARE_APP_ID ?? "";
 const squareLocationId = process.env.NEXT_PUBLIC_SQUARE_LOCATION_ID ?? "";
 
-export default function BillingPage() {
+function BillingPageContent() {
   const supabase = createClient();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -458,5 +458,23 @@ export default function BillingPage() {
         )}
       </div>
     </main>
+  );
+}
+
+export default function BillingPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="min-h-screen bg-[#f4f2ef]">
+          <div className="mx-auto max-w-4xl space-y-8 p-6 lg:p-10">
+            <div className="rounded-3xl border border-stone-200 bg-white p-6 shadow-sm">
+              <p className="text-sm text-stone-500">Loading billing...</p>
+            </div>
+          </div>
+        </main>
+      }
+    >
+      <BillingPageContent />
+    </Suspense>
   );
 }
