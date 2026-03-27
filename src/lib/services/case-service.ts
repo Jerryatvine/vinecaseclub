@@ -216,6 +216,24 @@ export async function getCaseItems(caseId: string) {
 export async function createCaseItem(input: CaseItemInput) {
   const supabase = createClient();
 
+  // 🔒 Inventory check on create
+  const { data: wine, error: wineError } = await supabase
+    .from("wines")
+    .select("inventory_count")
+    .eq("id", input.wine_id)
+    .single();
+
+  if (wineError || !wine) {
+    logSupabaseError("Error loading wine inventory:", wineError);
+    throw new Error(getErrorMessage(wineError));
+  }
+
+  if (input.quantity > wine.inventory_count) {
+    throw new Error(
+      `Inventory limit reached. Only ${wine.inventory_count} bottles available.`
+    );
+  }
+
   const { data, error } = await supabase
     .from("case_items")
     .insert([input])
@@ -235,6 +253,39 @@ export async function updateCaseItem(
   input: Partial<Pick<CaseItemRecord, "quantity" | "wine_id">>
 ) {
   const supabase = createClient();
+
+  // Get existing item
+  const { data: existingItem, error: existingError } = await supabase
+    .from("case_items")
+    .select("*")
+    .eq("id", id)
+    .single();
+
+  if (existingError || !existingItem) {
+    logSupabaseError("Error loading existing case item:", existingError);
+    throw new Error(getErrorMessage(existingError));
+  }
+
+  const wineId = input.wine_id ?? existingItem.wine_id;
+  const newQuantity = input.quantity ?? existingItem.quantity;
+
+  // Get inventory
+  const { data: wine, error: wineError } = await supabase
+    .from("wines")
+    .select("inventory_count")
+    .eq("id", wineId)
+    .single();
+
+  if (wineError || !wine) {
+    logSupabaseError("Error loading wine inventory:", wineError);
+    throw new Error(getErrorMessage(wineError));
+  }
+
+  if (newQuantity > wine.inventory_count) {
+    throw new Error(
+      `Inventory limit reached. Only ${wine.inventory_count} bottles available.`
+    );
+  }
 
   const { data, error } = await supabase
     .from("case_items")
@@ -271,6 +322,26 @@ export async function replaceCaseItems(
   const supabase = createClient();
 
   const positiveItems = items.filter((item) => item.quantity > 0);
+
+  // 🔒 Validate ALL items before writing
+  for (const item of positiveItems) {
+    const { data: wine, error } = await supabase
+      .from("wines")
+      .select("inventory_count")
+      .eq("id", item.wine_id)
+      .single();
+
+    if (error || !wine) {
+      logSupabaseError("Error loading wine inventory:", error);
+      throw new Error(getErrorMessage(error));
+    }
+
+    if (item.quantity > wine.inventory_count) {
+      throw new Error(
+        `Inventory limit reached for wine ${item.wine_id}. Max ${wine.inventory_count}`
+      );
+    }
+  }
 
   const { error: deleteError } = await supabase
     .from("case_items")

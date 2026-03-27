@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
 type Payment = {
@@ -44,6 +45,10 @@ const squareLocationId = process.env.NEXT_PUBLIC_SQUARE_LOCATION_ID ?? "";
 
 export default function BillingPage() {
   const supabase = createClient();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const isSetupFlow = searchParams.get("setup") === "1";
+
   const cardContainerRef = useRef<HTMLDivElement | null>(null);
   const cardRef = useRef<SquareCard | null>(null);
 
@@ -165,6 +170,10 @@ export default function BillingPage() {
         }
 
         setPayments(paymentData ?? []);
+
+        if (isSetupFlow && !hasCardOnFile) {
+          setShowCardForm(true);
+        }
       } catch (err) {
         console.error(err);
         setError("Something went wrong.");
@@ -174,7 +183,7 @@ export default function BillingPage() {
     }
 
     loadBilling();
-  }, [supabase]);
+  }, [supabase, isSetupFlow]);
 
   useEffect(() => {
     async function mountSquareCard() {
@@ -302,6 +311,11 @@ export default function BillingPage() {
 
       await refreshSavedCard();
       setShowCardForm(false);
+
+      if (isSetupFlow) {
+        router.push("/");
+        router.refresh();
+      }
     } catch (err) {
       console.error(err);
       setError("Could not save card.");
@@ -327,9 +341,13 @@ export default function BillingPage() {
     <main className="min-h-screen bg-[#f4f2ef]">
       <div className="mx-auto max-w-4xl space-y-8 p-6 lg:p-10">
         <div>
-          <h1 className="text-3xl font-bold text-stone-800">Billing</h1>
+          <h1 className="text-3xl font-bold text-stone-800">
+            {isSetupFlow ? "Add Your Payment Method" : "Billing"}
+          </h1>
           <p className="mt-2 text-sm text-stone-500">
-            Manage your payment method and view your billing history.
+            {isSetupFlow
+              ? "Add a card to finish setting up your membership."
+              : "Manage your payment method and view your billing history."}
           </p>
         </div>
 
@@ -352,12 +370,14 @@ export default function BillingPage() {
                 {card.brand} ending in {card.last4}
               </p>
 
-              <button
-                className="rounded-2xl border border-stone-300 px-4 py-2 text-sm font-medium text-stone-700 hover:bg-stone-50"
-                onClick={() => setShowCardForm((prev) => !prev)}
-              >
-                {showCardForm ? "Cancel" : "Replace card"}
-              </button>
+              {!isSetupFlow && (
+                <button
+                  className="rounded-2xl border border-stone-300 px-4 py-2 text-sm font-medium text-stone-700 hover:bg-stone-50"
+                  onClick={() => setShowCardForm((prev) => !prev)}
+                >
+                  {showCardForm ? "Cancel" : "Replace card"}
+                </button>
+              )}
             </div>
           ) : (
             <div className="mt-4 flex items-center justify-between gap-4">
@@ -385,51 +405,57 @@ export default function BillingPage() {
                 disabled={savingCard}
                 className="rounded-2xl bg-[#263330] px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
               >
-                {savingCard ? "Saving..." : "Save card"}
+                {savingCard
+                  ? "Saving..."
+                  : isSetupFlow
+                  ? "Save card and continue"
+                  : "Save card"}
               </button>
             </div>
           ) : null}
         </div>
 
-        <div className="rounded-3xl border border-stone-200 bg-white shadow-sm">
-          <div className="border-b border-stone-200 px-6 py-4">
-            <h2 className="text-lg font-semibold text-stone-800">
-              Payment History
-            </h2>
-          </div>
+        {!isSetupFlow && (
+          <div className="rounded-3xl border border-stone-200 bg-white shadow-sm">
+            <div className="border-b border-stone-200 px-6 py-4">
+              <h2 className="text-lg font-semibold text-stone-800">
+                Payment History
+              </h2>
+            </div>
 
-          {loading ? (
-            <div className="p-6 text-sm text-stone-500">Loading...</div>
-          ) : payments.length === 0 ? (
-            <div className="p-6 text-sm text-stone-500">No payments yet.</div>
-          ) : (
-            <table className="min-w-full text-sm">
-              <thead>
-                <tr className="border-b text-left text-stone-500">
-                  <th className="px-6 py-3">Date</th>
-                  <th className="px-6 py-3">Amount</th>
-                  <th className="px-6 py-3">Status</th>
-                </tr>
-              </thead>
-
-              <tbody>
-                {payments.map((p) => (
-                  <tr key={p.id} className="border-b border-stone-100">
-                    <td className="px-6 py-4 text-stone-700">
-                      {formatDate(p.created_at)}
-                    </td>
-                    <td className="px-6 py-4 font-medium text-stone-800">
-                      {formatCurrency(p.amount)}
-                    </td>
-                    <td className="px-6 py-4 capitalize text-stone-700">
-                      {p.status}
-                    </td>
+            {loading ? (
+              <div className="p-6 text-sm text-stone-500">Loading...</div>
+            ) : payments.length === 0 ? (
+              <div className="p-6 text-sm text-stone-500">No payments yet.</div>
+            ) : (
+              <table className="min-w-full text-sm">
+                <thead>
+                  <tr className="border-b text-left text-stone-500">
+                    <th className="px-6 py-3">Date</th>
+                    <th className="px-6 py-3">Amount</th>
+                    <th className="px-6 py-3">Status</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
+                </thead>
+
+                <tbody>
+                  {payments.map((p) => (
+                    <tr key={p.id} className="border-b border-stone-100">
+                      <td className="px-6 py-4 text-stone-700">
+                        {formatDate(p.created_at)}
+                      </td>
+                      <td className="px-6 py-4 font-medium text-stone-800">
+                        {formatCurrency(p.amount)}
+                      </td>
+                      <td className="px-6 py-4 capitalize text-stone-700">
+                        {p.status}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        )}
       </div>
     </main>
   );

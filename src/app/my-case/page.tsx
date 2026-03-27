@@ -508,6 +508,8 @@ export default function MyCasePage() {
   async function handleChangeQuantity(item: CaseItem, delta: number) {
     const currentQty = item.quantity || 1;
     const newQty = currentQty + delta;
+    const wine = allWines.find((w) => w.id === item.wine_id);
+    const inventory = Number(wine?.inventory ?? 0);
 
     try {
       setUpdatingItem(item.id);
@@ -518,6 +520,11 @@ export default function MyCasePage() {
         await deleteCaseItem(item.id);
         setCaseItems((prev) => prev.filter((ci) => ci.id !== item.id));
       } else {
+        if (newQty > inventory) {
+          setError(`Only ${inventory} bottle${inventory === 1 ? "" : "s"} available for ${wine?.name ?? "this wine"}.`);
+          return;
+        }
+
         await updateCaseItem(item.id, { quantity: newQty });
         setCaseItems((prev) =>
           prev.map((ci) =>
@@ -729,6 +736,9 @@ export default function MyCasePage() {
 
                 const qty = item.quantity || 1;
                 const isUpdating = updatingItem === item.id;
+                const inventory = Number(wine.inventory ?? 0);
+                const remaining = Math.max(inventory - qty, 0);
+                const maxReached = qty >= inventory;
 
                 return (
                   <motion.div
@@ -783,6 +793,11 @@ export default function MyCasePage() {
                                 ${Number(wine.club_price ?? 0).toFixed(2)}
                               </span>
                             </div>
+                            {canCustomize && (
+                              <p className="mt-1 text-xs text-stone-400">
+                                {remaining} bottle{remaining === 1 ? "" : "s"} left
+                              </p>
+                            )}
                           </div>
 
                           <div className="flex shrink-0 items-center gap-2 pr-4">
@@ -803,7 +818,7 @@ export default function MyCasePage() {
 
                                   <Button
                                     className="h-7 w-7 bg-transparent text-stone-500 hover:bg-stone-200 hover:text-emerald-700"
-                                    disabled={isUpdating}
+                                    disabled={isUpdating || maxReached}
                                     onClick={() => handleChangeQuantity(item, 1)}
                                   >
                                     <Plus className="h-3.5 w-3.5" />

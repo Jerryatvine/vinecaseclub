@@ -54,6 +54,7 @@ export default function SignupPage() {
             zip_code: trimmedZip || null,
             delivery_approved: deliveryApproved,
             delivery_review_required: deliveryReviewRequired,
+            onboarding_redirect: "/onboarding/payment-method",
           },
         },
       });

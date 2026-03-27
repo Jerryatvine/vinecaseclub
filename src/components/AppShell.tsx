@@ -1,6 +1,6 @@
 "use client";
 
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import SidebarNav from "@/components/SidebarNav";
 import AuthProvider from "@/components/AuthProvider";
 import UserHeader from "@/components/UserHeader";
@@ -11,12 +11,17 @@ export default function AppShell({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  const isBillingSetupFlow =
+    pathname === "/account/billing" && searchParams.get("setup") === "1";
 
   const hideSidebar =
     pathname === "/login" ||
     pathname === "/signup" ||
     pathname === "/forgot-password" ||
-    pathname === "/reset-password";
+    pathname === "/reset-password" ||
+    isBillingSetupFlow;
 
   if (hideSidebar) {
     return (
