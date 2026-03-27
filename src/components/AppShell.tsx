@@ -1,11 +1,12 @@
 "use client";
 
+import { Suspense } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import SidebarNav from "@/components/SidebarNav";
 import AuthProvider from "@/components/AuthProvider";
 import UserHeader from "@/components/UserHeader";
 
-export default function AppShell({
+function AppShellInner({
   children,
 }: {
   children: React.ReactNode;
@@ -49,5 +50,23 @@ export default function AppShell({
         </div>
       </div>
     </AuthProvider>
+  );
+}
+
+export default function AppShell({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <Suspense
+      fallback={
+        <AuthProvider>
+          <main>{children}</main>
+        </AuthProvider>
+      }
+    >
+      <AppShellInner>{children}</AppShellInner>
+    </Suspense>
   );
 }
