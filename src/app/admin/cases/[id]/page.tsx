@@ -37,7 +37,7 @@ type TemplateItem = {
 type Wine = {
   id: string;
   name: string;
-  winery?: string;
+  winery?: string | null;
   club_price?: number | null;
   inventory?: number | null;
 };
