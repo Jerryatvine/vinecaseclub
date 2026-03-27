@@ -30,17 +30,17 @@ import {
 type WineItem = {
   id: string;
   name: string;
-  winery?: string;
+  winery?: string | null;
   vintage?: number | null;
-  type?: string;
-  varietal?: string;
-  region?: string;
-  image_url?: string;
+  type?: string | null;
+  varietal?: string | null;
+  region?: string | null;
+  image_url?: string | null;
   msrp?: number | null;
   store_price?: number | null;
   club_price?: number | null;
   inventory?: number | null;
-  available_for_club?: boolean;
+  available_for_club?: boolean | null;
   tasting_notes?: string | null;
 };
 
