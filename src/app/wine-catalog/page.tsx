@@ -8,17 +8,17 @@ import { Search, Package, Wine as WineIcon, X } from "lucide-react";
 type WineItem = {
   id: string;
   name: string;
-  winery: string;
-  vintage?: number;
-  image_url?: string;
-  msrp?: number;
-  store_price?: number;
-  club_price?: number;
-  available_for_club?: boolean;
-  varietal?: string;
-  region?: string;
+  winery?: string | null;
+  vintage?: number | null;
+  image_url?: string | null;
+  msrp?: number | null;
+  store_price?: number | null;
+  club_price?: number | null;
+  available_for_club?: boolean | null;
+  varietal?: string | null;
+  region?: string | null;
   tasting_notes?: string | null;
-  type?: "red" | "white" | "rosé" | "sparkling" | "dessert" | "orange";
+  type?: "red" | "white" | "rosé" | "sparkling" | "dessert" | "orange" | null;
 };
 
 function Skeleton({ className = "" }: { className?: string }) {
@@ -56,7 +56,7 @@ function WineBottleCard({
       <div className="p-4">
         <p className="truncate font-semibold text-stone-800">{wine.name}</p>
         <p className="mt-1 text-sm text-stone-500">
-          {wine.winery}
+          {wine.winery ?? ""}
           {wine.vintage ? ` · ${wine.vintage}` : ""}
         </p>
 
@@ -119,7 +119,7 @@ function WineDetailModal({
           <div>
             <h2 className="text-2xl font-bold text-stone-800">{wine.name}</h2>
             <p className="text-stone-500">
-              {wine.winery}
+              {wine.winery ?? ""}
               {wine.vintage ? ` · ${wine.vintage}` : ""}
             </p>
           </div>
