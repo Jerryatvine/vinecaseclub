@@ -23,7 +23,7 @@ type CaseItem = {
 type WineItem = {
   id: string;
   name: string;
-  winery: string;
+  winery?: string | null;
   vintage?: number | null;
   image_url?: string | null;
   tasting_notes?: string | null;
@@ -447,7 +447,7 @@ export default function RateWinesPage() {
                               {wine.name}
                             </p>
                             <p className="text-xs text-stone-500">
-                              {wine.winery}
+                              {wine.winery ?? ""}
                               {wine.vintage ? ` · ${wine.vintage}` : ""}
                             </p>
 
