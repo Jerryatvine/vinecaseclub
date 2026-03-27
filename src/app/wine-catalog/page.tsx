@@ -18,7 +18,7 @@ type WineItem = {
   varietal?: string | null;
   region?: string | null;
   tasting_notes?: string | null;
-  type?: "red" | "white" | "rosé" | "sparkling" | "dessert" | "orange" | null;
+  type?: string | null;
 };
 
 function Skeleton({ className = "" }: { className?: string }) {
