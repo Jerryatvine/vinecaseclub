@@ -17,13 +17,36 @@ type CardInfo = {
   brand: string;
 };
 
+type BillingContact = {
+  givenName?: string;
+  familyName?: string;
+  email?: string;
+  phone?: string;
+  addressLines?: string[];
+  city?: string;
+  state?: string;
+  postalCode?: string;
+  countryCode?: string;
+};
+
+type StoreCardVerificationDetails = {
+  intent: "STORE";
+  billingContact: BillingContact;
+  customerInitiated: boolean;
+  sellerKeyedIn: boolean;
+};
+
+type SquareTokenizeResult = {
+  status: string;
+  token?: string;
+  errors?: unknown[];
+};
+
 type SquareCard = {
   attach: (selectorOrElement: string | HTMLElement) => Promise<void>;
-  tokenize: () => Promise<{
-    status: string;
-    token?: string;
-    errors?: unknown[];
-  }>;
+  tokenize: (
+    verificationDetails?: StoreCardVerificationDetails
+  ) => Promise<SquareTokenizeResult>;
   destroy?: () => Promise<void>;
 };
 
@@ -341,6 +364,19 @@ function BillingPageContent() {
     }
   }
 
+  function buildBillingContact(fullName: string | null, email: string | null): BillingContact {
+    const trimmedName = (fullName ?? "").trim();
+    const parts = trimmedName.split(/\s+/).filter(Boolean);
+    const givenName = parts[0] ?? undefined;
+    const familyName = parts.length > 1 ? parts.slice(1).join(" ") : undefined;
+
+    return {
+      givenName,
+      familyName,
+      email: email ?? undefined,
+    };
+  }
+
   async function handleSaveCard() {
     try {
       setSavingCard(true);
@@ -351,20 +387,34 @@ function BillingPageContent() {
         return;
       }
 
-      const tokenResult = await cardRef.current.tokenize();
-
-      if (tokenResult.status !== "OK" || !tokenResult.token) {
-        setError("Card tokenization failed. Please check your card details.");
-        return;
-      }
-
       const {
         data: { session },
         error: sessionError,
       } = await supabase.auth.getSession();
 
-      if (sessionError || !session?.access_token) {
+      if (sessionError || !session?.user || !session.access_token) {
         setError("Could not verify your login session.");
+        return;
+      }
+
+      const user = session.user;
+      const fullName =
+        (user.user_metadata?.full_name as string | undefined) ??
+        (user.user_metadata?.name as string | undefined) ??
+        null;
+
+      const verificationDetails: StoreCardVerificationDetails = {
+        intent: "STORE",
+        billingContact: buildBillingContact(fullName, user.email ?? null),
+        customerInitiated: true,
+        sellerKeyedIn: false,
+      };
+
+      const tokenResult = await cardRef.current.tokenize(verificationDetails);
+
+      if (tokenResult.status !== "OK" || !tokenResult.token) {
+        console.error("Square tokenize failed:", tokenResult);
+        setError("Card verification failed. Please check your card details and billing info.");
         return;
       }
 
