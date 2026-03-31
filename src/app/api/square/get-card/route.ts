@@ -2,14 +2,25 @@ import { NextResponse } from "next/server";
 import { Client, Environment } from "square/legacy";
 import { createClient } from "@/lib/supabase/server";
 
+function getRequiredEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) {
+    throw new Error(`Missing required environment variable: ${name}`);
+  }
+  return value;
+}
+
+const squareAccessToken = getRequiredEnv("SQUARE_ACCESS_TOKEN");
+const squareEnvironment =
+  process.env.SQUARE_ENVIRONMENT === "production"
+    ? Environment.Production
+    : Environment.Sandbox;
+
 const square = new Client({
   bearerAuthCredentials: {
-    accessToken: process.env.SQUARE_ACCESS_TOKEN!,
+    accessToken: squareAccessToken,
   },
-  environment:
-    process.env.SQUARE_ENVIRONMENT === "production"
-      ? Environment.Production
-      : Environment.Sandbox,
+  environment: squareEnvironment,
 });
 
 export async function GET() {
@@ -48,10 +59,12 @@ export async function GET() {
     }
 
     if (!squareCardId && user.email) {
+      const normalizedEmail = user.email.trim().toLowerCase();
+
       const { data: memberByEmail, error: memberByEmailError } = await supabase
         .from("members")
         .select("square_card_id")
-        .eq("email", user.email)
+        .eq("email", normalizedEmail)
         .maybeSingle();
 
       if (memberByEmailError) {
@@ -67,7 +80,13 @@ export async function GET() {
     }
 
     if (!squareCardId) {
-      return NextResponse.json({ card: null });
+      return NextResponse.json({
+        card: null,
+        environment:
+          process.env.SQUARE_ENVIRONMENT === "production"
+            ? "production"
+            : "sandbox",
+      });
     }
 
     const cardRes = await square.cardsApi.retrieveCard(squareCardId);
@@ -78,6 +97,10 @@ export async function GET() {
         last4: card?.last4 ?? null,
         brand: card?.cardBrand ?? null,
       },
+      environment:
+        process.env.SQUARE_ENVIRONMENT === "production"
+          ? "production"
+          : "sandbox",
     });
   } catch (err) {
     console.error("Failed to fetch card:", err);

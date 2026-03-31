@@ -42,6 +42,7 @@ declare global {
 
 const squareAppId = process.env.NEXT_PUBLIC_SQUARE_APP_ID ?? "";
 const squareLocationId = process.env.NEXT_PUBLIC_SQUARE_LOCATION_ID ?? "";
+const squareScriptSrc = "https://web.squarecdn.com/v1/square.js";
 
 function BillingPageContent() {
   const supabase = createClient();
@@ -57,7 +58,81 @@ function BillingPageContent() {
   const [loading, setLoading] = useState(true);
   const [savingCard, setSavingCard] = useState(false);
   const [showCardForm, setShowCardForm] = useState(false);
+  const [squareReady, setSquareReady] = useState(false);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadSquareScript() {
+      try {
+        if (!squareAppId || !squareLocationId) {
+          if (!cancelled) {
+            setError(
+              "Square is not configured. Add NEXT_PUBLIC_SQUARE_APP_ID and NEXT_PUBLIC_SQUARE_LOCATION_ID."
+            );
+          }
+          return;
+        }
+
+        if (window.Square) {
+          if (!cancelled) {
+            setSquareReady(true);
+          }
+          return;
+        }
+
+        const existingScript = document.querySelector<HTMLScriptElement>(
+          `script[src="${squareScriptSrc}"]`
+        );
+
+        if (existingScript) {
+          existingScript.addEventListener("load", () => {
+            if (!cancelled) {
+              setSquareReady(true);
+            }
+          });
+
+          existingScript.addEventListener("error", () => {
+            if (!cancelled) {
+              setError("Square payment form failed to load.");
+            }
+          });
+
+          return;
+        }
+
+        const script = document.createElement("script");
+        script.src = squareScriptSrc;
+        script.async = true;
+
+        script.onload = () => {
+          if (!cancelled) {
+            setSquareReady(true);
+          }
+        };
+
+        script.onerror = () => {
+          if (!cancelled) {
+            setError("Square payment form failed to load.");
+          }
+        };
+
+        document.head.appendChild(script);
+      } catch (err) {
+        console.error(err);
+        if (!cancelled) {
+          setError("Square payment form failed to load.");
+        }
+      }
+    }
+
+    loadSquareScript();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     async function loadBilling() {
@@ -98,11 +173,13 @@ function BillingPageContent() {
         }
 
         if (!memberId && user.email) {
+          const normalizedEmail = user.email.trim().toLowerCase();
+
           const { data: memberByEmail, error: memberByEmailError } =
             await supabase
               .from("members")
               .select("id, square_card_id")
-              .eq("email", user.email)
+              .eq("email", normalizedEmail)
               .maybeSingle();
 
           if (memberByEmailError) {
@@ -198,7 +275,7 @@ function BillingPageContent() {
         return;
       }
 
-      if (!window.Square) {
+      if (!squareReady || !window.Square) {
         setError("Square payment form failed to load.");
         return;
       }
@@ -239,7 +316,7 @@ function BillingPageContent() {
       }
       cardRef.current = null;
     };
-  }, [showCardForm]);
+  }, [showCardForm, squareReady]);
 
   async function refreshSavedCard() {
     const cardRes = await fetch("/api/square/get-card", {
@@ -402,7 +479,7 @@ function BillingPageContent() {
               <button
                 type="button"
                 onClick={handleSaveCard}
-                disabled={savingCard}
+                disabled={savingCard || !squareReady}
                 className="rounded-2xl bg-[#263330] px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
               >
                 {savingCard

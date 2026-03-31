@@ -3,20 +3,31 @@ import { randomUUID } from "crypto";
 import { Client, Environment } from "square/legacy";
 import { createClient } from "@supabase/supabase-js";
 
+function getRequiredEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) {
+    throw new Error(`Missing required environment variable: ${name}`);
+  }
+  return value;
+}
+
+const squareAccessToken = getRequiredEnv("SQUARE_ACCESS_TOKEN");
+const squareEnvironment =
+  process.env.SQUARE_ENVIRONMENT === "production"
+    ? Environment.Production
+    : Environment.Sandbox;
+
+const supabaseUrl = getRequiredEnv("NEXT_PUBLIC_SUPABASE_URL");
+const supabaseServiceRoleKey = getRequiredEnv("SUPABASE_SERVICE_ROLE_KEY");
+
 const square = new Client({
   bearerAuthCredentials: {
-    accessToken: process.env.SQUARE_ACCESS_TOKEN!,
+    accessToken: squareAccessToken,
   },
-  environment:
-    process.env.SQUARE_ENVIRONMENT === "production"
-      ? Environment.Production
-      : Environment.Sandbox,
+  environment: squareEnvironment,
 });
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+const supabase = createClient(supabaseUrl, supabaseServiceRoleKey);
 
 type CaseRow = {
   id: string;
@@ -50,9 +61,10 @@ type ExistingPaymentRow = {
 
 export async function POST(req: Request) {
   try {
-    const { caseId } = await req.json();
+    const body = await req.json();
+    const caseId = body?.caseId;
 
-    if (!caseId) {
+    if (!caseId || typeof caseId !== "string") {
       return NextResponse.json({ error: "Missing caseId" }, { status: 400 });
     }
 
@@ -186,13 +198,19 @@ export async function POST(req: Request) {
         amount: BigInt(amountInCents),
         currency: "USD",
       },
+      autocomplete: true,
     });
 
-    const paymentId = paymentResponse.result.payment?.id;
+    const payment = paymentResponse.result.payment;
+    const paymentId = payment?.id;
+    const paymentStatus = payment?.status;
 
-    if (!paymentId) {
+    if (!paymentId || paymentStatus !== "COMPLETED") {
       return NextResponse.json(
-        { error: "Square payment failed." },
+        {
+          error: "Square payment failed.",
+          details: paymentStatus ?? "No payment status returned.",
+        },
         { status: 500 }
       );
     }
@@ -213,6 +231,7 @@ export async function POST(req: Request) {
           error:
             "Payment succeeded, but payment history failed to save. Please review this case manually.",
           paymentId,
+          details: insertPaymentError.message,
         },
         { status: 500 }
       );
@@ -235,6 +254,7 @@ export async function POST(req: Request) {
           error:
             "Payment succeeded and payment history was saved, but the case record failed to update. Please review this case manually.",
           paymentId,
+          details: updateCaseError.message,
         },
         { status: 500 }
       );
@@ -246,6 +266,10 @@ export async function POST(req: Request) {
       total: totalDollars,
       amount: amountInCents,
       chargedAt,
+      environment:
+        process.env.SQUARE_ENVIRONMENT === "production"
+          ? "production"
+          : "sandbox",
     });
   } catch (error) {
     return NextResponse.json(

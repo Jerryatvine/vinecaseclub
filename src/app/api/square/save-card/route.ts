@@ -3,27 +3,31 @@ import { randomUUID } from "crypto";
 import { Client, Environment } from "square/legacy";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
 
-export async function GET() {
-  return NextResponse.json({
-    ok: true,
-    message: "save-card route is reachable",
-  });
+function getRequiredEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) {
+    throw new Error(`Missing required environment variable: ${name}`);
+  }
+  return value;
 }
+
+const squareAccessToken = getRequiredEnv("SQUARE_ACCESS_TOKEN");
+const squareEnvironment =
+  process.env.SQUARE_ENVIRONMENT === "production"
+    ? Environment.Production
+    : Environment.Sandbox;
+
+const supabaseUrl = getRequiredEnv("NEXT_PUBLIC_SUPABASE_URL");
+const supabaseServiceRoleKey = getRequiredEnv("SUPABASE_SERVICE_ROLE_KEY");
 
 const square = new Client({
   bearerAuthCredentials: {
-    accessToken: process.env.SQUARE_ACCESS_TOKEN!,
+    accessToken: squareAccessToken,
   },
-  environment:
-    process.env.SQUARE_ENVIRONMENT === "production"
-      ? Environment.Production
-      : Environment.Sandbox,
+  environment: squareEnvironment,
 });
 
-const supabaseAdmin = createAdminClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+const supabaseAdmin = createAdminClient(supabaseUrl, supabaseServiceRoleKey);
 
 type MemberRow = {
   id: string;
@@ -33,6 +37,17 @@ type MemberRow = {
   square_customer_id: string | null;
   square_card_id: string | null;
 };
+
+export async function GET() {
+  return NextResponse.json({
+    ok: true,
+    message: "save-card route is reachable",
+    environment:
+      process.env.SQUARE_ENVIRONMENT === "production"
+        ? "production"
+        : "sandbox",
+  });
+}
 
 export async function POST(req: Request) {
   try {
@@ -63,10 +78,14 @@ export async function POST(req: Request) {
       );
     }
 
-    const { token } = await req.json();
+    const body = await req.json();
+    const token = body?.token;
 
-    if (!token) {
-      return NextResponse.json({ error: "Missing token" }, { status: 400 });
+    if (!token || typeof token !== "string") {
+      return NextResponse.json(
+        { error: "Missing token", details: "A valid Square card token is required." },
+        { status: 400 }
+      );
     }
 
     let member: MemberRow | null = null;
@@ -93,11 +112,13 @@ export async function POST(req: Request) {
     }
 
     if (!member && user.email) {
+      const normalizedEmail = user.email.trim().toLowerCase();
+
       const { data: memberByEmail, error: memberByEmailError } =
         await supabaseAdmin
           .from("members")
           .select("id, name, email, user_id, square_customer_id, square_card_id")
-          .eq("email", user.email)
+          .eq("email", normalizedEmail)
           .maybeSingle();
 
       if (memberByEmailError) {
@@ -129,6 +150,7 @@ export async function POST(req: Request) {
 
     if (!customerId) {
       const customerRes = await square.customersApi.createCustomer({
+        idempotencyKey: randomUUID(),
         emailAddress: member.email ?? user.email ?? undefined,
         givenName: member.name ?? undefined,
       });
@@ -194,6 +216,10 @@ export async function POST(req: Request) {
       success: true,
       customerId,
       cardId,
+      environment:
+        process.env.SQUARE_ENVIRONMENT === "production"
+          ? "production"
+          : "sandbox",
     });
   } catch (error) {
     const message =
