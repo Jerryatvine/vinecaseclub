@@ -17,25 +17,6 @@ type CardInfo = {
   brand: string;
 };
 
-type BillingContact = {
-  givenName?: string;
-  familyName?: string;
-  email?: string;
-  phone?: string;
-  addressLines?: string[];
-  city?: string;
-  state?: string;
-  postalCode?: string;
-  countryCode?: string;
-};
-
-type StoreCardVerificationDetails = {
-  intent: "STORE";
-  billingContact: BillingContact;
-  customerInitiated: boolean;
-  sellerKeyedIn: boolean;
-};
-
 type SquareTokenizeResult = {
   status: string;
   token?: string;
@@ -44,9 +25,7 @@ type SquareTokenizeResult = {
 
 type SquareCard = {
   attach: (selectorOrElement: string | HTMLElement) => Promise<void>;
-  tokenize: (
-    verificationDetails?: StoreCardVerificationDetails
-  ) => Promise<SquareTokenizeResult>;
+  tokenize: () => Promise<SquareTokenizeResult>;
   destroy?: () => Promise<void>;
 };
 
@@ -82,7 +61,6 @@ function BillingPageContent() {
   const [savingCard, setSavingCard] = useState(false);
   const [showCardForm, setShowCardForm] = useState(false);
   const [squareReady, setSquareReady] = useState(false);
-  const [postalCode, setPostalCode] = useState("");
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -175,14 +153,6 @@ function BillingPageContent() {
         }
 
         const user = session.user;
-        const savedZip =
-          typeof user.user_metadata?.zip_code === "string"
-            ? user.user_metadata.zip_code
-            : "";
-
-        if (savedZip) {
-          setPostalCode(savedZip.replace(/\D/g, "").slice(0, 10));
-        }
 
         let memberId: string | null = null;
         let hasCardOnFile = false;
@@ -373,25 +343,6 @@ function BillingPageContent() {
     }
   }
 
-  function buildBillingContact(
-    fullName: string | null,
-    email: string | null,
-    zip: string
-  ): BillingContact {
-    const trimmedName = (fullName ?? "").trim();
-    const parts = trimmedName.split(/\s+/).filter(Boolean);
-    const givenName = parts[0] ?? undefined;
-    const familyName = parts.length > 1 ? parts.slice(1).join(" ") : undefined;
-
-    return {
-      givenName,
-      familyName,
-      email: email ?? undefined,
-      postalCode: zip || undefined,
-      countryCode: "US",
-    };
-  }
-
   async function handleSaveCard() {
     try {
       setSavingCard(true);
@@ -402,10 +353,11 @@ function BillingPageContent() {
         return;
       }
 
-      const cleanedPostalCode = postalCode.replace(/\D/g, "").slice(0, 10);
+      const tokenResult = await cardRef.current.tokenize();
 
-      if (!cleanedPostalCode) {
-        setError("Please enter your billing ZIP code.");
+      if (tokenResult.status !== "OK" || !tokenResult.token) {
+        console.error("Square tokenize failed:", tokenResult);
+        setError("Card verification failed. Please check your card details.");
         return;
       }
 
@@ -414,35 +366,8 @@ function BillingPageContent() {
         error: sessionError,
       } = await supabase.auth.getSession();
 
-      if (sessionError || !session?.user || !session.access_token) {
+      if (sessionError || !session?.access_token) {
         setError("Could not verify your login session.");
-        return;
-      }
-
-      const user = session.user;
-      const fullName =
-        (user.user_metadata?.full_name as string | undefined) ??
-        (user.user_metadata?.name as string | undefined) ??
-        null;
-
-      const verificationDetails: StoreCardVerificationDetails = {
-        intent: "STORE",
-        billingContact: buildBillingContact(
-          fullName,
-          user.email ?? null,
-          cleanedPostalCode
-        ),
-        customerInitiated: true,
-        sellerKeyedIn: false,
-      };
-
-      const tokenResult = await cardRef.current.tokenize(verificationDetails);
-
-      if (tokenResult.status !== "OK" || !tokenResult.token) {
-        console.error("Square tokenize failed:", tokenResult);
-        setError(
-          "Card verification failed. Please make sure the card details and billing ZIP code match your card."
-        );
         return;
       }
 
@@ -549,24 +474,6 @@ function BillingPageContent() {
 
           {showCardForm ? (
             <div className="mt-6 space-y-4 rounded-2xl border border-stone-200 bg-stone-50 p-4">
-              <div>
-                <label className="mb-1 block text-sm font-medium text-stone-800">
-                  Billing ZIP code
-                </label>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  autoComplete="postal-code"
-                  maxLength={10}
-                  className="w-full rounded-2xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none placeholder-stone-400 focus:border-[#263330] focus:ring-2 focus:ring-[#263330]/20"
-                  value={postalCode}
-                  onChange={(e) =>
-                    setPostalCode(e.target.value.replace(/\D/g, "").slice(0, 10))
-                  }
-                  placeholder="ZIP code"
-                />
-              </div>
-
               <div
                 ref={cardContainerRef}
                 className="min-h-[120px] rounded-2xl bg-white p-4"
