@@ -82,6 +82,7 @@ function BillingPageContent() {
   const [savingCard, setSavingCard] = useState(false);
   const [showCardForm, setShowCardForm] = useState(false);
   const [squareReady, setSquareReady] = useState(false);
+  const [postalCode, setPostalCode] = useState("");
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -174,6 +175,14 @@ function BillingPageContent() {
         }
 
         const user = session.user;
+        const savedZip =
+          typeof user.user_metadata?.zip_code === "string"
+            ? user.user_metadata.zip_code
+            : "";
+
+        if (savedZip) {
+          setPostalCode(savedZip.replace(/\D/g, "").slice(0, 10));
+        }
 
         let memberId: string | null = null;
         let hasCardOnFile = false;
@@ -364,7 +373,11 @@ function BillingPageContent() {
     }
   }
 
-  function buildBillingContact(fullName: string | null, email: string | null): BillingContact {
+  function buildBillingContact(
+    fullName: string | null,
+    email: string | null,
+    zip: string
+  ): BillingContact {
     const trimmedName = (fullName ?? "").trim();
     const parts = trimmedName.split(/\s+/).filter(Boolean);
     const givenName = parts[0] ?? undefined;
@@ -374,6 +387,8 @@ function BillingPageContent() {
       givenName,
       familyName,
       email: email ?? undefined,
+      postalCode: zip || undefined,
+      countryCode: "US",
     };
   }
 
@@ -384,6 +399,13 @@ function BillingPageContent() {
 
       if (!cardRef.current) {
         setError("Card form is not ready.");
+        return;
+      }
+
+      const cleanedPostalCode = postalCode.replace(/\D/g, "").slice(0, 10);
+
+      if (!cleanedPostalCode) {
+        setError("Please enter your billing ZIP code.");
         return;
       }
 
@@ -405,7 +427,11 @@ function BillingPageContent() {
 
       const verificationDetails: StoreCardVerificationDetails = {
         intent: "STORE",
-        billingContact: buildBillingContact(fullName, user.email ?? null),
+        billingContact: buildBillingContact(
+          fullName,
+          user.email ?? null,
+          cleanedPostalCode
+        ),
         customerInitiated: true,
         sellerKeyedIn: false,
       };
@@ -414,7 +440,9 @@ function BillingPageContent() {
 
       if (tokenResult.status !== "OK" || !tokenResult.token) {
         console.error("Square tokenize failed:", tokenResult);
-        setError("Card verification failed. Please check your card details and billing info.");
+        setError(
+          "Card verification failed. Please make sure the card details and billing ZIP code match your card."
+        );
         return;
       }
 
@@ -521,6 +549,24 @@ function BillingPageContent() {
 
           {showCardForm ? (
             <div className="mt-6 space-y-4 rounded-2xl border border-stone-200 bg-stone-50 p-4">
+              <div>
+                <label className="mb-1 block text-sm font-medium text-stone-800">
+                  Billing ZIP code
+                </label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="postal-code"
+                  maxLength={10}
+                  className="w-full rounded-2xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-900 outline-none placeholder-stone-400 focus:border-[#263330] focus:ring-2 focus:ring-[#263330]/20"
+                  value={postalCode}
+                  onChange={(e) =>
+                    setPostalCode(e.target.value.replace(/\D/g, "").slice(0, 10))
+                  }
+                  placeholder="ZIP code"
+                />
+              </div>
+
               <div
                 ref={cardContainerRef}
                 className="min-h-[120px] rounded-2xl bg-white p-4"
