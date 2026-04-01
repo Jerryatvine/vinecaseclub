@@ -1,8 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
-import { ChevronDown, ChevronUp, Package, TriangleAlert, Wine as WineIcon } from "lucide-react";
+import React, { useEffect, useMemo, useState } from "react";
+import {
+  ChevronDown,
+  ChevronUp,
+  Package,
+  TriangleAlert,
+  Wine as WineIcon,
+} from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import {
   approveMemberDelivery,
@@ -385,9 +391,12 @@ export default function AdminMembersPage() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [expandedEmails, latestCasesByEmail, members, supabase]);
+  }, [expandedEmails, members, supabase]);
 
-  const unreadable = useMemo(() => loading || loadingCases, [loading, loadingCases]);
+  const unreadable = useMemo(
+    () => loading || loadingCases,
+    [loading, loadingCases]
+  );
 
   async function handleRoleChange(memberId: string, role: MemberRole) {
     try {
@@ -848,7 +857,7 @@ export default function AdminMembersPage() {
                   }, 0);
 
                   return (
-                    <div key={member.id} className="contents">
+                    <React.Fragment key={member.id}>
                       <tr className="border-b border-stone-100 align-top">
                         <td className="px-4 py-4 text-stone-800">{member.name}</td>
                         <td className="px-4 py-4 text-stone-700">{member.email}</td>
@@ -868,12 +877,13 @@ export default function AdminMembersPage() {
                               {deliveryStatusLabel(member)}
                             </span>
 
-                            {member.fulfillment_type === "delivery" && !addressComplete && (
+                            {member.fulfillment_type === "delivery" &&
+                            !addressComplete ? (
                               <p className="max-w-[200px] text-xs text-red-600">
                                 Missing required address fields. Delivery cannot be
                                 approved yet.
                               </p>
-                            )}
+                            ) : null}
                           </div>
                         </td>
                         <td className="px-4 py-4 text-stone-700">
@@ -1211,7 +1221,7 @@ export default function AdminMembersPage() {
                           </td>
                         </tr>
                       ) : null}
-                    </div>
+                    </React.Fragment>
                   );
                 })
               )}
