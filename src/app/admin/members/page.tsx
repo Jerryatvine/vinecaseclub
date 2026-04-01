@@ -18,7 +18,11 @@ import {
   undoCasePickedUp,
   type MemberCaseSummary,
 } from "@/lib/services/admin-case-service";
-import { getCaseItems, type CaseItemRecord } from "@/lib/services/case-service";
+import {
+  getCaseItems,
+  removeCaseAndRestock,
+  type CaseItemRecord,
+} from "@/lib/services/case-service";
 import { getAllWines } from "@/lib/services/wine-service";
 
 type MemberRole = "admin" | "member";
@@ -202,6 +206,7 @@ export default function AdminMembersPage() {
   const [savingId, setSavingId] = useState<string | null>(null);
   const [pickupSavingEmail, setPickupSavingEmail] = useState<string | null>(null);
   const [chargeSavingEmail, setChargeSavingEmail] = useState<string | null>(null);
+  const [removingCaseEmail, setRemovingCaseEmail] = useState<string | null>(null);
   const [deliverySavingId, setDeliverySavingId] = useState<string | null>(null);
 
   const [error, setError] = useState("");
@@ -623,6 +628,68 @@ export default function AdminMembersPage() {
     }
   }
 
+  async function handleRemoveCase(memberEmail: string) {
+    const email = memberEmail.trim().toLowerCase();
+    const current = latestCasesByEmail.get(email);
+
+    if (!current?.id) {
+      setError("No case found for this member.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Remove this member's latest case?\n\nMember: ${memberEmail}\nCase: ${caseLabel(
+        current
+      )}\n\nAll wines in this case will be returned to available inventory. This cannot be undone.`
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setRemovingCaseEmail(email);
+      setError("");
+      setSuccessMessage("");
+
+      const result = await removeCaseAndRestock(current.id);
+
+      setLatestCasesByEmail((prev) => {
+        const next = new Map(prev);
+        next.delete(email);
+        return next;
+      });
+
+      setCaseDetailsByEmail((prev) => {
+        const next = new Map(prev);
+        next.delete(email);
+        return next;
+      });
+
+      setExpandedEmails((prev) => {
+        const next = new Set(prev);
+        next.delete(email);
+        return next;
+      });
+
+      const wineData = await getAllWines();
+      setWinesById(new Map(wineData.map((wine) => [wine.id, wine])));
+
+      await refreshLatestCases();
+
+      setSuccessMessage(
+        `Case removed. ${result.restockedBottleCount} bottle${
+          result.restockedBottleCount === 1 ? "" : "s"
+        } returned to inventory.`
+      );
+    } catch (err) {
+      console.error(err);
+      setError("Could not remove case and return inventory.");
+    } finally {
+      setRemovingCaseEmail(null);
+    }
+  }
+
   return (
     <main className="min-h-screen bg-[#f4f2ef]">
       <div className="mx-auto max-w-7xl p-6 lg:p-10">
@@ -697,6 +764,7 @@ export default function AdminMembersPage() {
                   const c = latestCasesByEmail.get(email);
                   const isPickupSaving = pickupSavingEmail === email;
                   const isChargeSaving = chargeSavingEmail === email;
+                  const isRemovingCase = removingCaseEmail === email;
                   const isDeliverySaving = deliverySavingId === member.id;
                   const isExpanded = expandedEmails.has(email);
                   const caseDetail = caseDetailsByEmail.get(email);
@@ -709,6 +777,7 @@ export default function AdminMembersPage() {
                   const canUndoPickedUp = !!c?.id && status === "picked_up";
                   const canChargeCard =
                     !!c?.id && status === "ready_for_pickup" && !c?.charged;
+                  const canRemoveCase = !!c?.id && !isRemovingCase;
 
                   const addressComplete = hasCompleteDeliveryAddress(member);
 
@@ -943,6 +1012,20 @@ export default function AdminMembersPage() {
                               title="Undo picked up (sets status back to ready_for_pickup)"
                             >
                               Undo
+                            </button>
+
+                            <button
+                              type="button"
+                              disabled={!canRemoveCase}
+                              onClick={() => handleRemoveCase(member.email)}
+                              className="rounded-2xl border border-red-300 bg-white px-3 py-2 text-xs font-medium text-red-700 transition hover:bg-red-50 disabled:opacity-50"
+                              title={
+                                c?.id
+                                  ? "Remove this member's latest case and return wines to inventory"
+                                  : "No case found for this member"
+                              }
+                            >
+                              {isRemovingCase ? "Removing..." : "Remove case"}
                             </button>
 
                             <Link

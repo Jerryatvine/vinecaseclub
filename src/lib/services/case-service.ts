@@ -375,3 +375,71 @@ export async function replaceCaseItems(
 
   return (data ?? []) as CaseItemRecord[];
 }
+
+export async function removeCaseAndRestock(caseId: string) {
+  const supabase = createClient();
+
+  const items = await getCaseItems(caseId);
+
+  for (const item of items) {
+    const quantityToReturn = Number(item.quantity ?? 0);
+
+    if (quantityToReturn <= 0) {
+      continue;
+    }
+
+    const { data: wine, error: wineError } = await supabase
+      .from("wines")
+      .select("inventory_count")
+      .eq("id", item.wine_id)
+      .single();
+
+    if (wineError || !wine) {
+      logSupabaseError("Error loading wine inventory for restock:", wineError);
+      throw new Error(getErrorMessage(wineError));
+    }
+
+    const currentInventory = Number(wine.inventory_count ?? 0);
+
+    const { error: updateWineError } = await supabase
+      .from("wines")
+      .update({
+        inventory_count: currentInventory + quantityToReturn,
+      })
+      .eq("id", item.wine_id);
+
+    if (updateWineError) {
+      logSupabaseError("Error restocking wine inventory:", updateWineError);
+      throw new Error(getErrorMessage(updateWineError));
+    }
+  }
+
+  const { error: deleteItemsError } = await supabase
+    .from("case_items")
+    .delete()
+    .eq("case_id", caseId);
+
+  if (deleteItemsError) {
+    logSupabaseError("Error deleting case items during case removal:", deleteItemsError);
+    throw new Error(getErrorMessage(deleteItemsError));
+  }
+
+  const { error: deleteCaseError } = await supabase
+    .from("cases")
+    .delete()
+    .eq("id", caseId);
+
+  if (deleteCaseError) {
+    logSupabaseError("Error deleting case during case removal:", deleteCaseError);
+    throw new Error(getErrorMessage(deleteCaseError));
+  }
+
+  return {
+    success: true,
+    restockedBottleCount: items.reduce(
+      (sum, item) => sum + Number(item.quantity ?? 0),
+      0
+    ),
+    removedItemCount: items.length,
+  };
+}
