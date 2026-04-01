@@ -777,7 +777,6 @@ export default function AdminMembersPage() {
                   const canUndoPickedUp = !!c?.id && status === "picked_up";
                   const canChargeCard =
                     !!c?.id && status === "ready_for_pickup" && !c?.charged;
-                  const canRemoveCase = !!c?.id && !isRemovingCase;
 
                   const addressComplete = hasCompleteDeliveryAddress(member);
 
@@ -1014,20 +1013,6 @@ export default function AdminMembersPage() {
                               Undo
                             </button>
 
-                            <button
-                              type="button"
-                              disabled={!canRemoveCase}
-                              onClick={() => handleRemoveCase(member.email)}
-                              className="rounded-2xl border border-red-300 bg-white px-3 py-2 text-xs font-medium text-red-700 transition hover:bg-red-50 disabled:opacity-50"
-                              title={
-                                c?.id
-                                  ? "Remove this member's latest case and return wines to inventory"
-                                  : "No case found for this member"
-                              }
-                            >
-                              {isRemovingCase ? "Removing..." : "Remove case"}
-                            </button>
-
                             <Link
                               href={`/admin/payments?member=${encodeURIComponent(
                                 member.email
@@ -1051,7 +1036,7 @@ export default function AdminMembersPage() {
                         <tr className="border-b border-stone-200 bg-stone-50">
                           <td colSpan={16} className="px-4 py-4">
                             <div className="rounded-2xl border border-stone-200 bg-white p-4">
-                              <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                              <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                                 <div>
                                   <h3 className="text-base font-semibold text-stone-800">
                                     Live Case View
@@ -1061,7 +1046,7 @@ export default function AdminMembersPage() {
                                   </p>
                                 </div>
 
-                                <div className="flex flex-wrap gap-3 text-sm">
+                                <div className="flex flex-wrap items-center gap-3 text-sm">
                                   <span className="rounded-full bg-stone-100 px-3 py-1 font-medium text-stone-700">
                                     {caseLabel(c)}
                                   </span>
@@ -1071,6 +1056,16 @@ export default function AdminMembersPage() {
                                   <span className="rounded-full bg-stone-100 px-3 py-1 font-medium text-stone-700">
                                     {formatCurrency(totalClubPrice)}
                                   </span>
+
+                                  <button
+                                    type="button"
+                                    disabled={isRemovingCase}
+                                    onClick={() => handleRemoveCase(member.email)}
+                                    className="rounded-2xl border border-red-300 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 transition hover:bg-red-100 disabled:opacity-50"
+                                    title="Remove this member's latest case and return wines to inventory"
+                                  >
+                                    {isRemovingCase ? "Removing..." : "Remove case"}
+                                  </button>
                                 </div>
                               </div>
 
