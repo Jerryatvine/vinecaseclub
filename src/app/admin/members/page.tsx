@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { ChevronDown, ChevronUp, Package, Wine as WineIcon } from "lucide-react";
+import { ChevronDown, ChevronUp, Package, TriangleAlert, Wine as WineIcon } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import {
   approveMemberDelivery,
@@ -63,6 +63,14 @@ type MemberCaseDetail = {
   caseId: string;
   items: CaseItemRecord[];
 };
+
+type RemoveCaseModalState = {
+  email: string;
+  memberName: string;
+  caseLabel: string;
+  bottleCount: number;
+  totalClubPrice: number;
+} | null;
 
 function formatDate(dateString?: string | null) {
   if (!dateString) return "—";
@@ -208,6 +216,8 @@ export default function AdminMembersPage() {
   const [chargeSavingEmail, setChargeSavingEmail] = useState<string | null>(null);
   const [removingCaseEmail, setRemovingCaseEmail] = useState<string | null>(null);
   const [deliverySavingId, setDeliverySavingId] = useState<string | null>(null);
+  const [removeCaseModal, setRemoveCaseModal] =
+    useState<RemoveCaseModalState>(null);
 
   const [error, setError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
@@ -250,7 +260,10 @@ export default function AdminMembersPage() {
     }
   }
 
-  async function loadCaseContentsForMember(memberEmail: string, forceRefresh = false) {
+  async function loadCaseContentsForMember(
+    memberEmail: string,
+    forceRefresh = false
+  ) {
     const email = memberEmail.trim().toLowerCase();
     const latestCase = latestCasesByEmail.get(email);
 
@@ -628,22 +641,44 @@ export default function AdminMembersPage() {
     }
   }
 
-  async function handleRemoveCase(memberEmail: string) {
-    const email = memberEmail.trim().toLowerCase();
-    const current = latestCasesByEmail.get(email);
+  function openRemoveCaseModal(
+    member: Member,
+    currentCase: MemberCaseSummary | undefined,
+    totalBottleCount: number,
+    totalClubPrice: number
+  ) {
+    const email = member.email.trim().toLowerCase();
 
-    if (!current?.id) {
+    if (!currentCase?.id) {
       setError("No case found for this member.");
       return;
     }
 
-    const confirmed = window.confirm(
-      `Remove this member's latest case?\n\nMember: ${memberEmail}\nCase: ${caseLabel(
-        current
-      )}\n\nAll wines in this case will be returned to available inventory. This cannot be undone.`
-    );
+    setError("");
+    setSuccessMessage("");
+    setRemoveCaseModal({
+      email,
+      memberName: member.name,
+      caseLabel: caseLabel(currentCase),
+      bottleCount: totalBottleCount,
+      totalClubPrice,
+    });
+  }
 
-    if (!confirmed) {
+  function closeRemoveCaseModal() {
+    if (removingCaseEmail) return;
+    setRemoveCaseModal(null);
+  }
+
+  async function confirmRemoveCase() {
+    if (!removeCaseModal) return;
+
+    const email = removeCaseModal.email;
+    const current = latestCasesByEmail.get(email);
+
+    if (!current?.id) {
+      setError("No case found for this member.");
+      setRemoveCaseModal(null);
       return;
     }
 
@@ -682,6 +717,7 @@ export default function AdminMembersPage() {
           result.restockedBottleCount === 1 ? "" : "s"
         } returned to inventory.`
       );
+      setRemoveCaseModal(null);
     } catch (err) {
       console.error(err);
       setError("Could not remove case and return inventory.");
@@ -698,7 +734,8 @@ export default function AdminMembersPage() {
             <h1 className="text-3xl font-bold text-stone-800">Members</h1>
             <p className="mt-2 text-sm text-stone-500">
               View member accounts, delivery requests, full delivery addresses,
-              roles, case tiers, payment status, pickup status, and live case contents.
+              roles, case tiers, payment status, pickup status, and live case
+              contents.
             </p>
           </div>
 
@@ -811,8 +848,8 @@ export default function AdminMembersPage() {
                   }, 0);
 
                   return (
-                    <>
-                      <tr key={member.id} className="border-b border-stone-100 align-top">
+                    <div key={member.id} className="contents">
+                      <tr className="border-b border-stone-100 align-top">
                         <td className="px-4 py-4 text-stone-800">{member.name}</td>
                         <td className="px-4 py-4 text-stone-700">{member.email}</td>
                         <td className="px-4 py-4 text-stone-700">
@@ -833,7 +870,8 @@ export default function AdminMembersPage() {
 
                             {member.fulfillment_type === "delivery" && !addressComplete && (
                               <p className="max-w-[200px] text-xs text-red-600">
-                                Missing required address fields. Delivery cannot be approved yet.
+                                Missing required address fields. Delivery cannot be
+                                approved yet.
                               </p>
                             )}
                           </div>
@@ -869,9 +907,7 @@ export default function AdminMembersPage() {
                           )}
                         </td>
                         <td className="px-4 py-4 text-stone-700">{caseLabel(c)}</td>
-                        <td className="px-4 py-4 text-stone-700">
-                          {c?.status ?? "—"}
-                        </td>
+                        <td className="px-4 py-4 text-stone-700">{c?.status ?? "—"}</td>
                         <td className="px-4 py-4">
                           <span
                             className={`inline-flex rounded-full px-3 py-1 text-xs font-medium ${paymentStatusClasses(
@@ -1042,7 +1078,8 @@ export default function AdminMembersPage() {
                                     Live Case View
                                   </h3>
                                   <p className="mt-1 text-sm text-stone-500">
-                                    {member.name}&apos;s current case contents update as case items change.
+                                    {member.name}&apos;s current case contents update
+                                    as case items change.
                                   </p>
                                 </div>
 
@@ -1057,15 +1094,24 @@ export default function AdminMembersPage() {
                                     {formatCurrency(totalClubPrice)}
                                   </span>
 
-                                  <button
-                                    type="button"
-                                    disabled={isRemovingCase}
-                                    onClick={() => handleRemoveCase(member.email)}
-                                    className="rounded-2xl border border-red-300 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 transition hover:bg-red-100 disabled:opacity-50"
-                                    title="Remove this member's latest case and return wines to inventory"
-                                  >
-                                    {isRemovingCase ? "Removing..." : "Remove case"}
-                                  </button>
+                                  {c?.id ? (
+                                    <button
+                                      type="button"
+                                      disabled={isRemovingCase}
+                                      onClick={() =>
+                                        openRemoveCaseModal(
+                                          member,
+                                          c,
+                                          totalBottleCount,
+                                          totalClubPrice
+                                        )
+                                      }
+                                      className="rounded-2xl border border-red-300 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 transition hover:bg-red-100 disabled:opacity-50"
+                                      title="Remove this member's latest case and return wines to inventory"
+                                    >
+                                      {isRemovingCase ? "Removing..." : "Remove case"}
+                                    </button>
+                                  ) : null}
                                 </div>
                               </div>
 
@@ -1087,9 +1133,13 @@ export default function AdminMembersPage() {
                                         <th className="px-3 py-3 font-medium">Wine</th>
                                         <th className="px-3 py-3 font-medium">Type</th>
                                         <th className="px-3 py-3 font-medium">Region</th>
-                                        <th className="px-3 py-3 font-medium">Club Price</th>
+                                        <th className="px-3 py-3 font-medium">
+                                          Club Price
+                                        </th>
                                         <th className="px-3 py-3 font-medium">Qty</th>
-                                        <th className="px-3 py-3 font-medium">Line Total</th>
+                                        <th className="px-3 py-3 font-medium">
+                                          Line Total
+                                        </th>
                                       </tr>
                                     </thead>
                                     <tbody>
@@ -1161,7 +1211,7 @@ export default function AdminMembersPage() {
                           </td>
                         </tr>
                       ) : null}
-                    </>
+                    </div>
                   );
                 })
               )}
@@ -1170,9 +1220,90 @@ export default function AdminMembersPage() {
         </div>
 
         <p className="mt-4 text-xs text-stone-500">
-          Changes save directly to Supabase. Case contents refresh live when case or wine data changes.
+          Changes save directly to Supabase. Case contents refresh live when case
+          or wine data changes.
         </p>
       </div>
+
+      {removeCaseModal ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-lg rounded-3xl border border-stone-200 bg-white p-6 shadow-2xl">
+            <div className="flex items-start gap-4">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-red-100 text-red-700">
+                <TriangleAlert className="h-6 w-6" />
+              </div>
+
+              <div className="flex-1">
+                <h2 className="text-xl font-semibold text-stone-900">
+                  Remove member case?
+                </h2>
+                <p className="mt-2 text-sm leading-6 text-stone-600">
+                  This will permanently remove the current case for{" "}
+                  <span className="font-semibold text-stone-800">
+                    {removeCaseModal.memberName}
+                  </span>{" "}
+                  and return all wines to available inventory.
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-5 rounded-2xl border border-stone-200 bg-stone-50 p-4">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <p className="text-xs font-medium uppercase tracking-wide text-stone-500">
+                    Case
+                  </p>
+                  <p className="mt-1 text-sm font-semibold text-stone-800">
+                    {removeCaseModal.caseLabel}
+                  </p>
+                </div>
+
+                <div>
+                  <p className="text-xs font-medium uppercase tracking-wide text-stone-500">
+                    Bottles returning
+                  </p>
+                  <p className="mt-1 text-sm font-semibold text-stone-800">
+                    {removeCaseModal.bottleCount}
+                  </p>
+                </div>
+
+                <div className="sm:col-span-2">
+                  <p className="text-xs font-medium uppercase tracking-wide text-stone-500">
+                    Club value returning to inventory
+                  </p>
+                  <p className="mt-1 text-sm font-semibold text-stone-800">
+                    {formatCurrency(removeCaseModal.totalClubPrice)}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              This action cannot be undone.
+            </div>
+
+            <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={closeRemoveCaseModal}
+                disabled={Boolean(removingCaseEmail)}
+                className="rounded-2xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-medium text-stone-700 transition hover:bg-stone-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                onClick={confirmRemoveCase}
+                disabled={Boolean(removingCaseEmail)}
+                className="rounded-2xl bg-red-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-red-800 disabled:opacity-50"
+              >
+                {removingCaseEmail ? "Removing case..." : "Yes, remove case"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </main>
   );
 }
