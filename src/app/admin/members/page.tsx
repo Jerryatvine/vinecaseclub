@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { ChevronDown, ChevronUp, Package, Wine as WineIcon } from "lucide-react";
+import { createClient } from "@/lib/supabase/client";
 import {
   approveMemberDelivery,
   getAllMembers,
@@ -16,6 +18,8 @@ import {
   undoCasePickedUp,
   type MemberCaseSummary,
 } from "@/lib/services/admin-case-service";
+import { getCaseItems, type CaseItemRecord } from "@/lib/services/case-service";
+import { getAllWines } from "@/lib/services/wine-service";
 
 type MemberRole = "admin" | "member";
 type MembershipTier = "economy" | "premium";
@@ -37,6 +41,23 @@ type Member = {
   city?: string | null;
   state?: string | null;
   delivery_notes?: string | null;
+};
+
+type WineItem = {
+  id: string;
+  name: string;
+  winery?: string | null;
+  vintage?: number | null;
+  type?: string | null;
+  region?: string | null;
+  image_url?: string | null;
+  available_for_club?: boolean | null;
+  club_price?: number | null;
+};
+
+type MemberCaseDetail = {
+  caseId: string;
+  items: CaseItemRecord[];
 };
 
 function formatDate(dateString?: string | null) {
@@ -160,13 +181,23 @@ function hasCompleteDeliveryAddress(member: Member) {
 }
 
 export default function AdminMembersPage() {
+  const supabase = useMemo(() => createClient(), []);
+
   const [members, setMembers] = useState<Member[]>([]);
   const [latestCasesByEmail, setLatestCasesByEmail] = useState<
     Map<string, MemberCaseSummary>
   >(new Map());
+  const [caseDetailsByEmail, setCaseDetailsByEmail] = useState<
+    Map<string, MemberCaseDetail>
+  >(new Map());
+  const [expandedEmails, setExpandedEmails] = useState<Set<string>>(new Set());
+  const [winesById, setWinesById] = useState<Map<string, WineItem>>(new Map());
 
   const [loading, setLoading] = useState(true);
   const [loadingCases, setLoadingCases] = useState(false);
+  const [loadingCaseContentsEmail, setLoadingCaseContentsEmail] = useState<
+    string | null
+  >(null);
 
   const [savingId, setSavingId] = useState<string | null>(null);
   const [pickupSavingEmail, setPickupSavingEmail] = useState<string | null>(null);
@@ -193,6 +224,19 @@ export default function AdminMembersPage() {
       );
 
       setLatestCasesByEmail(map);
+
+      setCaseDetailsByEmail((prev) => {
+        const next = new Map(prev);
+
+        for (const [email, detail] of prev.entries()) {
+          const latestCase = map.get(email);
+          if (!latestCase?.id || detail.caseId !== latestCase.id) {
+            next.delete(email);
+          }
+        }
+
+        return next;
+      });
     } catch (err) {
       console.error(err);
       setError("Could not load member cases.");
@@ -201,15 +245,78 @@ export default function AdminMembersPage() {
     }
   }
 
+  async function loadCaseContentsForMember(memberEmail: string, forceRefresh = false) {
+    const email = memberEmail.trim().toLowerCase();
+    const latestCase = latestCasesByEmail.get(email);
+
+    if (!latestCase?.id) {
+      setError("No case found for this member.");
+      return;
+    }
+
+    const existing = caseDetailsByEmail.get(email);
+    if (!forceRefresh && existing?.caseId === latestCase.id) {
+      return;
+    }
+
+    try {
+      setLoadingCaseContentsEmail(email);
+      setError("");
+
+      const items = await getCaseItems(latestCase.id);
+
+      setCaseDetailsByEmail((prev) => {
+        const next = new Map(prev);
+        next.set(email, {
+          caseId: latestCase.id,
+          items,
+        });
+        return next;
+      });
+    } catch (err) {
+      console.error(err);
+      setError("Could not load case contents.");
+    } finally {
+      setLoadingCaseContentsEmail(null);
+    }
+  }
+
+  async function toggleCaseContents(memberEmail: string) {
+    const email = memberEmail.trim().toLowerCase();
+    const isExpanded = expandedEmails.has(email);
+
+    if (isExpanded) {
+      setExpandedEmails((prev) => {
+        const next = new Set(prev);
+        next.delete(email);
+        return next;
+      });
+      return;
+    }
+
+    setExpandedEmails((prev) => {
+      const next = new Set(prev);
+      next.add(email);
+      return next;
+    });
+
+    await loadCaseContentsForMember(email);
+  }
+
   useEffect(() => {
     const initialize = async () => {
       try {
         setLoading(true);
         setError("");
 
-        const data = await getAllMembers();
-        setMembers(data);
-        await refreshLatestCases(data);
+        const [memberData, wineData] = await Promise.all([
+          getAllMembers(),
+          getAllWines(),
+        ]);
+
+        setMembers(memberData);
+        setWinesById(new Map(wineData.map((wine) => [wine.id, wine])));
+        await refreshLatestCases(memberData);
       } catch (err) {
         console.error(err);
         setError("Could not load members.");
@@ -220,6 +327,47 @@ export default function AdminMembersPage() {
 
     initialize();
   }, []);
+
+  useEffect(() => {
+    const channel = supabase
+      .channel("admin-members-live-view")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "cases" },
+        async () => {
+          await refreshLatestCases();
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "case_items" },
+        async () => {
+          const expanded = Array.from(expandedEmails);
+          if (expanded.length === 0) return;
+
+          for (const email of expanded) {
+            await loadCaseContentsForMember(email, true);
+          }
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "wines" },
+        async () => {
+          try {
+            const wineData = await getAllWines();
+            setWinesById(new Map(wineData.map((wine) => [wine.id, wine])));
+          } catch (err) {
+            console.error(err);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [expandedEmails, latestCasesByEmail, members, supabase]);
 
   const unreadable = useMemo(() => loading || loadingCases, [loading, loadingCases]);
 
@@ -458,6 +606,9 @@ export default function AdminMembersPage() {
       }
 
       await refreshLatestCases();
+      if (expandedEmails.has(email)) {
+        await loadCaseContentsForMember(email, true);
+      }
 
       setSuccessMessage(
         `Card charged successfully for ${memberEmail}. Total charged: ${formatCurrency(
@@ -480,7 +631,7 @@ export default function AdminMembersPage() {
             <h1 className="text-3xl font-bold text-stone-800">Members</h1>
             <p className="mt-2 text-sm text-stone-500">
               View member accounts, delivery requests, full delivery addresses,
-              roles, case tiers, payment status, and pickup status.
+              roles, case tiers, payment status, pickup status, and live case contents.
             </p>
           </div>
 
@@ -522,6 +673,7 @@ export default function AdminMembersPage() {
                 <th className="px-4 py-3 font-medium">Picked Up</th>
                 <th className="px-4 py-3 font-medium">Role</th>
                 <th className="px-4 py-3 font-medium">Membership Tier</th>
+                <th className="px-4 py-3 font-medium">Case View</th>
                 <th className="px-4 py-3 font-medium">Actions</th>
               </tr>
             </thead>
@@ -529,13 +681,13 @@ export default function AdminMembersPage() {
             <tbody>
               {unreadable ? (
                 <tr>
-                  <td colSpan={15} className="px-4 py-8 text-center text-stone-500">
+                  <td colSpan={16} className="px-4 py-8 text-center text-stone-500">
                     Loading members...
                   </td>
                 </tr>
               ) : members.length === 0 ? (
                 <tr>
-                  <td colSpan={15} className="px-4 py-8 text-center text-stone-500">
+                  <td colSpan={16} className="px-4 py-8 text-center text-stone-500">
                     No members found.
                   </td>
                 </tr>
@@ -546,6 +698,8 @@ export default function AdminMembersPage() {
                   const isPickupSaving = pickupSavingEmail === email;
                   const isChargeSaving = chargeSavingEmail === email;
                   const isDeliverySaving = deliverySavingId === member.id;
+                  const isExpanded = expandedEmails.has(email);
+                  const caseDetail = caseDetailsByEmail.get(email);
 
                   const status = c?.status ?? null;
                   const pickedUpAt = c?.picked_up_at ?? null;
@@ -567,203 +721,369 @@ export default function AdminMembersPage() {
 
                   const addressLines = formatFullAddress(member);
 
+                  const detailedItems = (caseDetail?.items ?? [])
+                    .map((item) => ({
+                      ...item,
+                      wine: winesById.get(item.wine_id) ?? null,
+                    }))
+                    .sort((a, b) => {
+                      const aName = a.wine?.name ?? "";
+                      const bName = b.wine?.name ?? "";
+                      return aName.localeCompare(bName);
+                    });
+
+                  const totalBottleCount = detailedItems.reduce(
+                    (sum, item) => sum + Number(item.quantity || 0),
+                    0
+                  );
+
+                  const totalClubPrice = detailedItems.reduce((sum, item) => {
+                    const clubPrice = Number(item.wine?.club_price ?? 0);
+                    return sum + clubPrice * Number(item.quantity || 0);
+                  }, 0);
+
                   return (
-                    <tr key={member.id} className="border-b border-stone-100 align-top">
-                      <td className="px-4 py-4 text-stone-800">{member.name}</td>
-                      <td className="px-4 py-4 text-stone-700">{member.email}</td>
-                      <td className="px-4 py-4 text-stone-700">
-                        {formatDate(member.created_at)}
-                      </td>
-                      <td className="px-4 py-4 text-stone-700">
-                        {fulfillmentLabel(member)}
-                      </td>
-                      <td className="px-4 py-4">
-                        <div className="space-y-2">
-                          <span
-                            className={`inline-flex rounded-full px-3 py-1 text-xs font-medium ${deliveryStatusClasses(
-                              member
-                            )}`}
-                          >
-                            {deliveryStatusLabel(member)}
-                          </span>
+                    <>
+                      <tr key={member.id} className="border-b border-stone-100 align-top">
+                        <td className="px-4 py-4 text-stone-800">{member.name}</td>
+                        <td className="px-4 py-4 text-stone-700">{member.email}</td>
+                        <td className="px-4 py-4 text-stone-700">
+                          {formatDate(member.created_at)}
+                        </td>
+                        <td className="px-4 py-4 text-stone-700">
+                          {fulfillmentLabel(member)}
+                        </td>
+                        <td className="px-4 py-4">
+                          <div className="space-y-2">
+                            <span
+                              className={`inline-flex rounded-full px-3 py-1 text-xs font-medium ${deliveryStatusClasses(
+                                member
+                              )}`}
+                            >
+                              {deliveryStatusLabel(member)}
+                            </span>
 
-                          {member.fulfillment_type === "delivery" && !addressComplete && (
-                            <p className="max-w-[200px] text-xs text-red-600">
-                              Missing required address fields. Delivery cannot be approved yet.
-                            </p>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-4 py-4 text-stone-700">
-                        {member.fulfillment_type === "delivery" ? (
-                          addressLines.length > 0 ? (
-                            <div className="space-y-1">
-                              {addressLines.map((line, index) => (
-                                <p key={index} className="max-w-[220px] break-words">
-                                  {line}
-                                </p>
-                              ))}
-                            </div>
-                          ) : (
-                            "—"
-                          )
-                        ) : (
-                          "—"
-                        )}
-                      </td>
-                      <td className="px-4 py-4 text-stone-700">
-                        {member.fulfillment_type === "delivery" ? (
-                          member.delivery_notes ? (
-                            <p className="max-w-[220px] whitespace-pre-line break-words text-sm">
-                              {member.delivery_notes}
-                            </p>
-                          ) : (
-                            "—"
-                          )
-                        ) : (
-                          "—"
-                        )}
-                      </td>
-                      <td className="px-4 py-4 text-stone-700">{caseLabel(c)}</td>
-                      <td className="px-4 py-4 text-stone-700">
-                        {c?.status ?? "—"}
-                      </td>
-                      <td className="px-4 py-4">
-                        <span
-                          className={`inline-flex rounded-full px-3 py-1 text-xs font-medium ${paymentStatusClasses(
-                            c
-                          )}`}
-                        >
-                          {paymentStatusLabel(c)}
-                        </span>
-                      </td>
-                      <td className="px-4 py-4 text-stone-700">
-                        {chargedAt ? formatDateTime(chargedAt) : "—"}
-                      </td>
-                      <td className="px-4 py-4 text-stone-700">
-                        {pickedUpAt ? formatDateTime(pickedUpAt) : "—"}
-                      </td>
-
-                      <td className="px-4 py-4">
-                        <select
-                          value={member.role}
-                          disabled={savingId === member.id}
-                          onChange={(e) =>
-                            handleRoleChange(member.id, e.target.value as MemberRole)
-                          }
-                          className="rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm text-stone-800 outline-none disabled:opacity-50"
-                        >
-                          <option value="member">member</option>
-                          <option value="admin">admin</option>
-                        </select>
-                      </td>
-
-                      <td className="px-4 py-4">
-                        <select
-                          value={member.membership_tier}
-                          disabled={savingId === member.id}
-                          onChange={(e) =>
-                            handleTierChange(
-                              member.id,
-                              e.target.value as MembershipTier
+                            {member.fulfillment_type === "delivery" && !addressComplete && (
+                              <p className="max-w-[200px] text-xs text-red-600">
+                                Missing required address fields. Delivery cannot be approved yet.
+                              </p>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-4 py-4 text-stone-700">
+                          {member.fulfillment_type === "delivery" ? (
+                            addressLines.length > 0 ? (
+                              <div className="space-y-1">
+                                {addressLines.map((line, index) => (
+                                  <p key={index} className="max-w-[220px] break-words">
+                                    {line}
+                                  </p>
+                                ))}
+                              </div>
+                            ) : (
+                              "—"
                             )
-                          }
-                          className="rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm text-stone-800 outline-none disabled:opacity-50"
-                        >
-                          <option value="economy">economy</option>
-                          <option value="premium">premium</option>
-                        </select>
-                      </td>
-
-                      <td className="px-4 py-4">
-                        <div className="flex flex-wrap gap-2">
-                          <button
-                            type="button"
-                            disabled={!canApproveDelivery || isDeliverySaving}
-                            onClick={() => handleApproveDelivery(member.id)}
-                            className="rounded-2xl bg-blue-700 px-3 py-2 text-xs font-medium text-white disabled:opacity-50"
-                            title={
-                              canApproveDelivery
-                                ? "Approve delivery"
-                                : member.fulfillment_type !== "delivery"
-                                ? "Member is not set to delivery"
-                                : member.delivery_approved
-                                ? "Delivery is already approved"
-                                : !addressComplete
-                                ? "Complete address is required before approving delivery"
-                                : "Delivery cannot be approved yet"
-                            }
-                          >
-                            {isDeliverySaving ? "Saving..." : "Approve delivery"}
-                          </button>
-
-                          <button
-                            type="button"
-                            disabled={!canRejectDelivery || isDeliverySaving}
-                            onClick={() => handleRejectDelivery(member.id)}
-                            className="rounded-2xl border border-stone-300 bg-white px-3 py-2 text-xs font-medium text-stone-700 disabled:opacity-50"
-                          >
-                            Reject delivery
-                          </button>
-
-                          <button
-                            type="button"
-                            disabled={!canChargeCard || isChargeSaving}
-                            onClick={() => handleChargeCard(member.email)}
-                            className="rounded-2xl bg-emerald-700 px-3 py-2 text-xs font-medium text-white disabled:opacity-50"
-                            title={
-                              canChargeCard
-                                ? "Charge the saved card for the latest ready case"
-                                : c?.charged
-                                ? "This latest case is already charged"
-                                : "Only available when case status is ready_for_pickup"
-                            }
-                          >
-                            {isChargeSaving ? "Charging..." : "Charge card"}
-                          </button>
-
-                          <button
-                            type="button"
-                            disabled={!canMarkPickedUp || isPickupSaving}
-                            onClick={() => handleMarkPickedUp(member.email)}
-                            className="rounded-2xl bg-[#263330] px-3 py-2 text-xs font-medium text-white disabled:opacity-50"
-                            title={
-                              canMarkPickedUp
-                                ? "Mark latest case picked up"
-                                : "Only available when case status is ready_for_pickup"
-                            }
-                          >
-                            {isPickupSaving ? "Saving..." : "Mark picked up"}
-                          </button>
-
-                          <button
-                            type="button"
-                            disabled={!canUndoPickedUp || isPickupSaving}
-                            onClick={() => handleUndoPickedUp(member.email)}
-                            className="rounded-2xl border border-stone-300 bg-white px-3 py-2 text-xs font-medium text-stone-700 disabled:opacity-50"
-                            title="Undo picked up (sets status back to ready_for_pickup)"
-                          >
-                            Undo
-                          </button>
-
-                          <Link
-                            href={`/admin/payments?member=${encodeURIComponent(
-                              member.email
+                          ) : (
+                            "—"
+                          )}
+                        </td>
+                        <td className="px-4 py-4 text-stone-700">
+                          {member.fulfillment_type === "delivery" ? (
+                            member.delivery_notes ? (
+                              <p className="max-w-[220px] whitespace-pre-line break-words text-sm">
+                                {member.delivery_notes}
+                              </p>
+                            ) : (
+                              "—"
+                            )
+                          ) : (
+                            "—"
+                          )}
+                        </td>
+                        <td className="px-4 py-4 text-stone-700">{caseLabel(c)}</td>
+                        <td className="px-4 py-4 text-stone-700">
+                          {c?.status ?? "—"}
+                        </td>
+                        <td className="px-4 py-4">
+                          <span
+                            className={`inline-flex rounded-full px-3 py-1 text-xs font-medium ${paymentStatusClasses(
+                              c
                             )}`}
-                            className="rounded-2xl border border-stone-300 bg-white px-3 py-2 text-xs font-medium text-stone-700 transition hover:bg-stone-50"
-                            title="View this member's payment history"
                           >
-                            View payments
-                          </Link>
-                        </div>
+                            {paymentStatusLabel(c)}
+                          </span>
+                        </td>
+                        <td className="px-4 py-4 text-stone-700">
+                          {chargedAt ? formatDateTime(chargedAt) : "—"}
+                        </td>
+                        <td className="px-4 py-4 text-stone-700">
+                          {pickedUpAt ? formatDateTime(pickedUpAt) : "—"}
+                        </td>
 
-                        {c?.square_payment_id ? (
-                          <p className="mt-2 max-w-[220px] break-all text-xs text-stone-500">
-                            Payment ID: {c.square_payment_id}
-                          </p>
-                        ) : null}
-                      </td>
-                    </tr>
+                        <td className="px-4 py-4">
+                          <select
+                            value={member.role}
+                            disabled={savingId === member.id}
+                            onChange={(e) =>
+                              handleRoleChange(member.id, e.target.value as MemberRole)
+                            }
+                            className="rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm text-stone-800 outline-none disabled:opacity-50"
+                          >
+                            <option value="member">member</option>
+                            <option value="admin">admin</option>
+                          </select>
+                        </td>
+
+                        <td className="px-4 py-4">
+                          <select
+                            value={member.membership_tier}
+                            disabled={savingId === member.id}
+                            onChange={(e) =>
+                              handleTierChange(
+                                member.id,
+                                e.target.value as MembershipTier
+                              )
+                            }
+                            className="rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm text-stone-800 outline-none disabled:opacity-50"
+                          >
+                            <option value="economy">economy</option>
+                            <option value="premium">premium</option>
+                          </select>
+                        </td>
+
+                        <td className="px-4 py-4">
+                          <button
+                            type="button"
+                            onClick={() => toggleCaseContents(member.email)}
+                            disabled={!c?.id}
+                            className="inline-flex items-center gap-2 rounded-2xl border border-stone-300 bg-white px-3 py-2 text-xs font-medium text-stone-700 transition hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-50"
+                            title={
+                              c?.id
+                                ? isExpanded
+                                  ? "Hide live case contents"
+                                  : "Show live case contents"
+                                : "No case found for this member"
+                            }
+                          >
+                            {isExpanded ? (
+                              <ChevronUp className="h-4 w-4" />
+                            ) : (
+                              <ChevronDown className="h-4 w-4" />
+                            )}
+                            {isExpanded ? "Hide case" : "View case"}
+                          </button>
+                        </td>
+
+                        <td className="px-4 py-4">
+                          <div className="flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              disabled={!canApproveDelivery || isDeliverySaving}
+                              onClick={() => handleApproveDelivery(member.id)}
+                              className="rounded-2xl bg-blue-700 px-3 py-2 text-xs font-medium text-white disabled:opacity-50"
+                              title={
+                                canApproveDelivery
+                                  ? "Approve delivery"
+                                  : member.fulfillment_type !== "delivery"
+                                  ? "Member is not set to delivery"
+                                  : member.delivery_approved
+                                  ? "Delivery is already approved"
+                                  : !addressComplete
+                                  ? "Complete address is required before approving delivery"
+                                  : "Delivery cannot be approved yet"
+                              }
+                            >
+                              {isDeliverySaving ? "Saving..." : "Approve delivery"}
+                            </button>
+
+                            <button
+                              type="button"
+                              disabled={!canRejectDelivery || isDeliverySaving}
+                              onClick={() => handleRejectDelivery(member.id)}
+                              className="rounded-2xl border border-stone-300 bg-white px-3 py-2 text-xs font-medium text-stone-700 disabled:opacity-50"
+                            >
+                              Reject delivery
+                            </button>
+
+                            <button
+                              type="button"
+                              disabled={!canChargeCard || isChargeSaving}
+                              onClick={() => handleChargeCard(member.email)}
+                              className="rounded-2xl bg-emerald-700 px-3 py-2 text-xs font-medium text-white disabled:opacity-50"
+                              title={
+                                canChargeCard
+                                  ? "Charge the saved card for the latest ready case"
+                                  : c?.charged
+                                  ? "This latest case is already charged"
+                                  : "Only available when case status is ready_for_pickup"
+                              }
+                            >
+                              {isChargeSaving ? "Charging..." : "Charge card"}
+                            </button>
+
+                            <button
+                              type="button"
+                              disabled={!canMarkPickedUp || isPickupSaving}
+                              onClick={() => handleMarkPickedUp(member.email)}
+                              className="rounded-2xl bg-[#263330] px-3 py-2 text-xs font-medium text-white disabled:opacity-50"
+                              title={
+                                canMarkPickedUp
+                                  ? "Mark latest case picked up"
+                                  : "Only available when case status is ready_for_pickup"
+                              }
+                            >
+                              {isPickupSaving ? "Saving..." : "Mark picked up"}
+                            </button>
+
+                            <button
+                              type="button"
+                              disabled={!canUndoPickedUp || isPickupSaving}
+                              onClick={() => handleUndoPickedUp(member.email)}
+                              className="rounded-2xl border border-stone-300 bg-white px-3 py-2 text-xs font-medium text-stone-700 disabled:opacity-50"
+                              title="Undo picked up (sets status back to ready_for_pickup)"
+                            >
+                              Undo
+                            </button>
+
+                            <Link
+                              href={`/admin/payments?member=${encodeURIComponent(
+                                member.email
+                              )}`}
+                              className="rounded-2xl border border-stone-300 bg-white px-3 py-2 text-xs font-medium text-stone-700 transition hover:bg-stone-50"
+                              title="View this member's payment history"
+                            >
+                              View payments
+                            </Link>
+                          </div>
+
+                          {c?.square_payment_id ? (
+                            <p className="mt-2 max-w-[220px] break-all text-xs text-stone-500">
+                              Payment ID: {c.square_payment_id}
+                            </p>
+                          ) : null}
+                        </td>
+                      </tr>
+
+                      {isExpanded ? (
+                        <tr className="border-b border-stone-200 bg-stone-50">
+                          <td colSpan={16} className="px-4 py-4">
+                            <div className="rounded-2xl border border-stone-200 bg-white p-4">
+                              <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                                <div>
+                                  <h3 className="text-base font-semibold text-stone-800">
+                                    Live Case View
+                                  </h3>
+                                  <p className="mt-1 text-sm text-stone-500">
+                                    {member.name}&apos;s current case contents update as case items change.
+                                  </p>
+                                </div>
+
+                                <div className="flex flex-wrap gap-3 text-sm">
+                                  <span className="rounded-full bg-stone-100 px-3 py-1 font-medium text-stone-700">
+                                    {caseLabel(c)}
+                                  </span>
+                                  <span className="rounded-full bg-stone-100 px-3 py-1 font-medium text-stone-700">
+                                    {totalBottleCount} bottles
+                                  </span>
+                                  <span className="rounded-full bg-stone-100 px-3 py-1 font-medium text-stone-700">
+                                    {formatCurrency(totalClubPrice)}
+                                  </span>
+                                </div>
+                              </div>
+
+                              {loadingCaseContentsEmail === email ? (
+                                <div className="flex items-center gap-2 rounded-2xl border border-stone-200 bg-stone-50 px-4 py-6 text-sm text-stone-500">
+                                  <Package className="h-4 w-4" />
+                                  Loading case contents...
+                                </div>
+                              ) : detailedItems.length === 0 ? (
+                                <div className="flex items-center gap-2 rounded-2xl border border-dashed border-stone-300 bg-stone-50 px-4 py-6 text-sm text-stone-500">
+                                  <Package className="h-4 w-4" />
+                                  No wines are currently assigned to this case.
+                                </div>
+                              ) : (
+                                <div className="overflow-x-auto">
+                                  <table className="min-w-full text-left text-sm">
+                                    <thead>
+                                      <tr className="border-b border-stone-200 text-stone-500">
+                                        <th className="px-3 py-3 font-medium">Wine</th>
+                                        <th className="px-3 py-3 font-medium">Type</th>
+                                        <th className="px-3 py-3 font-medium">Region</th>
+                                        <th className="px-3 py-3 font-medium">Club Price</th>
+                                        <th className="px-3 py-3 font-medium">Qty</th>
+                                        <th className="px-3 py-3 font-medium">Line Total</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {detailedItems.map((item) => {
+                                        const wine = item.wine;
+                                        const lineTotal =
+                                          Number(wine?.club_price ?? 0) *
+                                          Number(item.quantity ?? 0);
+
+                                        return (
+                                          <tr
+                                            key={item.id}
+                                            className="border-b border-stone-100"
+                                          >
+                                            <td className="px-3 py-4">
+                                              <div className="flex items-center gap-3">
+                                                <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-2xl bg-stone-100 text-stone-600">
+                                                  {wine?.image_url ? (
+                                                    <img
+                                                      src={wine.image_url}
+                                                      alt={wine.name || "Wine"}
+                                                      className="h-full w-full object-cover"
+                                                    />
+                                                  ) : (
+                                                    <WineIcon className="h-5 w-5" />
+                                                  )}
+                                                </div>
+
+                                                <div>
+                                                  <p className="font-medium text-stone-800">
+                                                    {wine?.name || "Unknown wine"}
+                                                  </p>
+                                                  <p className="text-xs text-stone-500">
+                                                    {[wine?.winery, wine?.vintage]
+                                                      .filter(Boolean)
+                                                      .join(" • ") || "—"}
+                                                  </p>
+                                                </div>
+                                              </div>
+                                            </td>
+
+                                            <td className="px-3 py-4 text-stone-700">
+                                              {wine?.type || "—"}
+                                            </td>
+
+                                            <td className="px-3 py-4 text-stone-700">
+                                              {wine?.region || "—"}
+                                            </td>
+
+                                            <td className="px-3 py-4 text-stone-700">
+                                              {formatCurrency(wine?.club_price ?? 0)}
+                                            </td>
+
+                                            <td className="px-3 py-4 text-stone-700">
+                                              {item.quantity}
+                                            </td>
+
+                                            <td className="px-3 py-4 font-medium text-stone-800">
+                                              {formatCurrency(lineTotal)}
+                                            </td>
+                                          </tr>
+                                        );
+                                      })}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ) : null}
+                    </>
                   );
                 })
               )}
@@ -772,7 +1092,7 @@ export default function AdminMembersPage() {
         </div>
 
         <p className="mt-4 text-xs text-stone-500">
-          Changes save directly to Supabase.
+          Changes save directly to Supabase. Case contents refresh live when case or wine data changes.
         </p>
       </div>
     </main>
