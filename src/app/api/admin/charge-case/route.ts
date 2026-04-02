@@ -29,10 +29,18 @@ const square = new Client({
 
 const supabase = createClient(supabaseUrl, supabaseServiceRoleKey);
 
+type CaseStatus =
+  | "draft"
+  | "customizing"
+  | "finalized"
+  | "ready_for_pickup"
+  | "picked_up";
+
 type CaseRow = {
   id: string;
   member_email: string | null;
   charged: boolean | null;
+  status: CaseStatus;
 };
 
 type MemberRow = {
@@ -59,6 +67,10 @@ type ExistingPaymentRow = {
   status: string;
 };
 
+function canChargeFromStatus(status: CaseStatus) {
+  return status === "finalized" || status === "ready_for_pickup";
+}
+
 export async function POST(req: Request) {
   try {
     const body = await req.json();
@@ -70,7 +82,7 @@ export async function POST(req: Request) {
 
     const { data: caseData, error: caseError } = await supabase
       .from("cases")
-      .select("id, member_email, charged")
+      .select("id, member_email, charged, status")
       .eq("id", caseId)
       .single();
 
@@ -90,6 +102,16 @@ export async function POST(req: Request) {
     if (typedCase.charged) {
       return NextResponse.json(
         { error: "Case already charged." },
+        { status: 400 }
+      );
+    }
+
+    if (!canChargeFromStatus(typedCase.status)) {
+      return NextResponse.json(
+        {
+          error:
+            "Case cannot be charged until it is finalized or ready for pickup.",
+        },
         { status: 400 }
       );
     }

@@ -109,6 +109,40 @@ export async function getLatestCasesForMemberEmails(emails: string[]) {
   return map;
 }
 
+export async function finalizeCaseAsAdmin(caseId: string) {
+  const supabase = createClient();
+
+  const { data, error } = await supabase
+    .from("cases")
+    .update({
+      status: "finalized",
+    })
+    .eq("id", caseId)
+    .select(
+      `
+        id,
+        member_email,
+        quarter,
+        year,
+        tier,
+        status,
+        created_at,
+        picked_up_at,
+        charged,
+        charged_at,
+        square_payment_id
+      `
+    )
+    .single();
+
+  if (error) {
+    logSupabaseError("Error finalizing case:", error);
+    throw new Error(getErrorMessage(error));
+  }
+
+  return data as MemberCaseSummary;
+}
+
 export async function markCasePickedUp(caseId: string) {
   const supabase = createClient();
 

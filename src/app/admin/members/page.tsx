@@ -19,6 +19,7 @@ import {
   type FulfillmentType,
 } from "@/lib/services/member-service";
 import {
+  finalizeCaseAsAdmin,
   getLatestCasesForMemberEmails,
   markCasePickedUp,
   undoCasePickedUp,
@@ -198,6 +199,16 @@ function hasCompleteDeliveryAddress(member: Member) {
   );
 }
 
+function canFinalizeCaseNow(c?: MemberCaseSummary) {
+  if (!c?.id || c.charged) return false;
+  return c.status === "draft" || c.status === "customizing";
+}
+
+function canChargeCaseNow(c?: MemberCaseSummary) {
+  if (!c?.id || c.charged) return false;
+  return c.status === "finalized" || c.status === "ready_for_pickup";
+}
+
 export default function AdminMembersPage() {
   const supabase = useMemo(() => createClient(), []);
 
@@ -220,6 +231,9 @@ export default function AdminMembersPage() {
   const [savingId, setSavingId] = useState<string | null>(null);
   const [pickupSavingEmail, setPickupSavingEmail] = useState<string | null>(null);
   const [chargeSavingEmail, setChargeSavingEmail] = useState<string | null>(null);
+  const [finalizeSavingEmail, setFinalizeSavingEmail] = useState<string | null>(
+    null
+  );
   const [removingCaseEmail, setRemovingCaseEmail] = useState<string | null>(null);
   const [deliverySavingId, setDeliverySavingId] = useState<string | null>(null);
   const [removeCaseModal, setRemoveCaseModal] =
@@ -503,6 +517,52 @@ export default function AdminMembersPage() {
     }
   }
 
+  async function handleFinalizeCase(memberEmail: string) {
+    const email = memberEmail.trim().toLowerCase();
+    const current = latestCasesByEmail.get(email);
+
+    if (!current?.id) {
+      setError("No case found for this member.");
+      return;
+    }
+
+    if (!canFinalizeCaseNow(current)) {
+      setError("Only draft or customizing cases can be finalized here.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Finalize this member's latest case?\n\nMember: ${memberEmail}\nCase: ${caseLabel(
+        current
+      )}\n\nThis will mark the case as finalized.`
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setFinalizeSavingEmail(email);
+      setError("");
+      setSuccessMessage("");
+
+      const updated = await finalizeCaseAsAdmin(current.id);
+
+      setLatestCasesByEmail((prev) => {
+        const next = new Map(prev);
+        next.set(email, updated);
+        return next;
+      });
+
+      setSuccessMessage("Case finalized.");
+    } catch (err) {
+      console.error(err);
+      setError("Could not finalize case.");
+    } finally {
+      setFinalizeSavingEmail(null);
+    }
+  }
+
   async function handleMarkPickedUp(memberEmail: string) {
     const email = memberEmail.trim().toLowerCase();
     const current = latestCasesByEmail.get(email);
@@ -595,8 +655,10 @@ export default function AdminMembersPage() {
       return;
     }
 
-    if (current.status !== "ready_for_pickup") {
-      setError("Only cases marked ready_for_pickup can be charged here.");
+    if (!canChargeCaseNow(current)) {
+      setError(
+        "This case can only be charged after it is finalized or ready for pickup."
+      );
       return;
     }
 
@@ -810,6 +872,7 @@ export default function AdminMembersPage() {
                   const c = latestCasesByEmail.get(email);
                   const isPickupSaving = pickupSavingEmail === email;
                   const isChargeSaving = chargeSavingEmail === email;
+                  const isFinalizeSaving = finalizeSavingEmail === email;
                   const isRemovingCase = removingCaseEmail === email;
                   const isDeliverySaving = deliverySavingId === member.id;
                   const isExpanded = expandedEmails.has(email);
@@ -821,8 +884,8 @@ export default function AdminMembersPage() {
 
                   const canMarkPickedUp = !!c?.id && status === "ready_for_pickup";
                   const canUndoPickedUp = !!c?.id && status === "picked_up";
-                  const canChargeCard =
-                    !!c?.id && status === "ready_for_pickup" && !c?.charged;
+                  const canChargeCard = canChargeCaseNow(c);
+                  const canFinalizeCase = canFinalizeCaseNow(c);
 
                   const addressComplete = hasCompleteDeliveryAddress(member);
 
@@ -1021,15 +1084,31 @@ export default function AdminMembersPage() {
 
                             <button
                               type="button"
+                              disabled={!canFinalizeCase || isFinalizeSaving}
+                              onClick={() => handleFinalizeCase(member.email)}
+                              className="rounded-2xl bg-amber-700 px-3 py-2 text-xs font-medium text-white disabled:opacity-50"
+                              title={
+                                canFinalizeCase
+                                  ? "Finalize the latest case"
+                                  : c?.charged
+                                  ? "This latest case is already charged"
+                                  : "Only draft or customizing cases can be finalized"
+                              }
+                            >
+                              {isFinalizeSaving ? "Finalizing..." : "Finalize case"}
+                            </button>
+
+                            <button
+                              type="button"
                               disabled={!canChargeCard || isChargeSaving}
                               onClick={() => handleChargeCard(member.email)}
                               className="rounded-2xl bg-emerald-700 px-3 py-2 text-xs font-medium text-white disabled:opacity-50"
                               title={
                                 canChargeCard
-                                  ? "Charge the saved card for the latest ready case"
+                                  ? "Charge the saved card for the latest finalized or ready case"
                                   : c?.charged
                                   ? "This latest case is already charged"
-                                  : "Only available when case status is ready_for_pickup"
+                                  : "Only available when case status is finalized or ready_for_pickup"
                               }
                             >
                               {isChargeSaving ? "Charging..." : "Charge card"}
