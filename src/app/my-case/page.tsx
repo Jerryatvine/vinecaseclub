@@ -27,7 +27,12 @@ type WineCase = {
   id: string;
   title?: string | null;
   quarter: string;
-  status: "draft" | "customizing" | "finalized" | "ready_for_pickup" | "picked_up";
+  status:
+    | "draft"
+    | "customizing"
+    | "finalized"
+    | "ready_for_pickup"
+    | "picked_up";
   tier?: "economy" | "premium" | null;
   case_size?: number | null;
   target_price_cap?: number | null;
@@ -35,6 +40,7 @@ type WineCase = {
   pickup_date?: string | null;
   member_email?: string | null;
   template_case_id?: string | null;
+  is_archived?: boolean;
 };
 
 type WineRecord = {
@@ -460,8 +466,8 @@ export default function MyCasePage() {
     currentCase?.target_price_cap != null
       ? Number(currentCase.target_price_cap)
       : currentCase?.tier === "economy"
-      ? 200
-      : null;
+        ? 200
+        : null;
 
   const isEconomyCase = currentCase?.tier === "economy";
 
@@ -521,7 +527,9 @@ export default function MyCasePage() {
         setCaseItems((prev) => prev.filter((ci) => ci.id !== item.id));
       } else {
         if (newQty > inventory) {
-          setError(`Only ${inventory} bottle${inventory === 1 ? "" : "s"} available for ${wine?.name ?? "this wine"}.`);
+          setError(
+            `Only ${inventory} bottle${inventory === 1 ? "" : "s"} available for ${wine?.name ?? "this wine"}.`
+          );
           return;
         }
 
@@ -834,7 +842,9 @@ export default function MyCasePage() {
                                 </Button>
                               </>
                             ) : (
-                              <span className="text-sm font-semibold text-stone-500">×{qty}</span>
+                              <span className="text-sm font-semibold text-stone-500">
+                                ×{qty}
+                              </span>
                             )}
                           </div>
                         </div>

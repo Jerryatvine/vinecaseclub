@@ -19,6 +19,7 @@ export type MemberCaseSummary = {
   charged: boolean | null;
   charged_at: string | null;
   square_payment_id: string | null;
+  is_archived: boolean;
 };
 
 function getErrorMessage(error: unknown) {
@@ -53,7 +54,7 @@ function normalizeEmail(email?: string | null) {
 }
 
 /**
- * Returns the latest case (by created_at) for each member email.
+ * Returns the latest non-archived case (by created_at) for each member email.
  * This normalizes emails in JavaScript so mismatched casing in the DB
  * does not prevent cases from appearing for members.
  */
@@ -82,10 +83,12 @@ export async function getLatestCasesForMemberEmails(emails: string[]) {
         picked_up_at,
         charged,
         charged_at,
-        square_payment_id
+        square_payment_id,
+        is_archived
       `
     )
     .not("member_email", "is", null)
+    .eq("is_archived", false)
     .order("created_at", { ascending: false });
 
   if (error) {
@@ -130,7 +133,8 @@ export async function finalizeCaseAsAdmin(caseId: string) {
         picked_up_at,
         charged,
         charged_at,
-        square_payment_id
+        square_payment_id,
+        is_archived
       `
     )
     .single();
@@ -165,7 +169,8 @@ export async function markCasePickedUp(caseId: string) {
         picked_up_at,
         charged,
         charged_at,
-        square_payment_id
+        square_payment_id,
+        is_archived
       `
     )
     .single();
@@ -200,13 +205,84 @@ export async function undoCasePickedUp(caseId: string) {
         picked_up_at,
         charged,
         charged_at,
-        square_payment_id
+        square_payment_id,
+        is_archived
       `
     )
     .single();
 
   if (error) {
     logSupabaseError("Error undoing picked up:", error);
+    throw new Error(getErrorMessage(error));
+  }
+
+  return data as MemberCaseSummary;
+}
+
+export async function archiveCaseAsAdmin(caseId: string) {
+  const supabase = createClient();
+
+  const { data, error } = await supabase
+    .from("cases")
+    .update({
+      is_archived: true,
+    })
+    .eq("id", caseId)
+    .select(
+      `
+        id,
+        member_email,
+        quarter,
+        year,
+        tier,
+        status,
+        created_at,
+        picked_up_at,
+        charged,
+        charged_at,
+        square_payment_id,
+        is_archived
+      `
+    )
+    .single();
+
+  if (error) {
+    logSupabaseError("Error archiving case:", error);
+    throw new Error(getErrorMessage(error));
+  }
+
+  return data as MemberCaseSummary;
+}
+
+export async function unarchiveCaseAsAdmin(caseId: string) {
+  const supabase = createClient();
+
+  const { data, error } = await supabase
+    .from("cases")
+    .update({
+      is_archived: false,
+    })
+    .eq("id", caseId)
+    .select(
+      `
+        id,
+        member_email,
+        quarter,
+        year,
+        tier,
+        status,
+        created_at,
+        picked_up_at,
+        charged,
+        charged_at,
+        square_payment_id,
+        is_archived
+      `
+    )
+    .single();
+
+  if (error) {
+    logSupabaseError("Error unarchiving case:", error);
     throw new Error(getErrorMessage(error));
   }
 

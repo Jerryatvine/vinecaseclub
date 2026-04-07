@@ -25,6 +25,7 @@ type TemplateCase = {
   target_price_cap?: number | null;
   finalize_deadline?: string | null;
   member_email?: string | null;
+  is_archived: boolean;
 };
 
 type MemberRecord = {
@@ -96,7 +97,8 @@ export async function POST(req: Request) {
           case_size,
           target_price_cap,
           finalize_deadline,
-          member_email
+          member_email,
+          is_archived
         `
       )
       .eq("id", caseId)
@@ -107,6 +109,13 @@ export async function POST(req: Request) {
     }
 
     const typedTemplate = templateCase as TemplateCase;
+
+    if (typedTemplate.is_archived) {
+      return NextResponse.json(
+        { error: "Archived cases cannot be published." },
+        { status: 400 }
+      );
+    }
 
     if (typedTemplate.member_email) {
       return NextResponse.json(
@@ -157,11 +166,13 @@ export async function POST(req: Request) {
       .map((member) => member.email?.trim().toLowerCase())
       .filter(Boolean) as string[];
 
-    const { data: existingCopies, error: existingCopiesError } = await supabaseAdmin
-      .from("cases")
-      .select("id, member_email")
-      .eq("template_case_id", caseId)
-      .in("member_email", memberEmails);
+    const { data: existingCopies, error: existingCopiesError } =
+      await supabaseAdmin
+        .from("cases")
+        .select("id, member_email")
+        .eq("template_case_id", caseId)
+        .eq("is_archived", false)
+        .in("member_email", memberEmails);
 
     if (existingCopiesError) {
       return NextResponse.json(
@@ -197,6 +208,7 @@ export async function POST(req: Request) {
             member_email: normalizedEmail,
             finalize_deadline: typedTemplate.finalize_deadline ?? null,
             template_case_id: typedTemplate.id,
+            is_archived: false,
           },
         ])
         .select("id")
@@ -238,7 +250,10 @@ export async function POST(req: Request) {
 
     if (updateTemplateError) {
       return NextResponse.json(
-        { error: "Published copies were created, but template status was not updated." },
+        {
+          error:
+            "Published copies were created, but template status was not updated.",
+        },
         { status: 500 }
       );
     }

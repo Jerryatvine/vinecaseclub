@@ -14,14 +14,18 @@ import {
   ShoppingBag,
   CreditCard,
   Copy,
+  Archive,
+  ArchiveRestore,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import {
+  archiveCase,
   createCase,
   deleteCase,
   getAllCases,
   getCaseItems,
   replaceCaseItems,
+  unarchiveCase,
   updateCase,
   type CaseRecord,
   type CaseStatus,
@@ -134,12 +138,15 @@ export default function AdminCasesPage() {
   const [statusUpdating, setStatusUpdating] = useState<CaseStatus | null>(null);
   const [chargingCase, setChargingCase] = useState(false);
   const [publishingCase, setPublishingCase] = useState(false);
+  const [archivingCaseId, setArchivingCaseId] = useState<string | null>(null);
+  const [showArchived, setShowArchived] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
   useEffect(() => {
     loadData();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showArchived]);
 
   async function loadData() {
     try {
@@ -148,19 +155,33 @@ export default function AdminCasesPage() {
       setSuccess("");
 
       const [caseData, wineData] = await Promise.all([
-        getAllCases(),
+        getAllCases(showArchived),
         getAllWines(),
       ]);
 
       setCases(caseData as CaseRecordWithCharge[]);
       setWines(wineData);
 
-      if (!selectedCaseId && caseData.length > 0) {
-        const firstCaseId = caseData[0].id;
-        setSelectedCaseId(firstCaseId);
-        await loadCaseItems(firstCaseId);
-      } else if (selectedCaseId) {
-        await loadCaseItems(selectedCaseId);
+      if (caseData.length === 0) {
+        setSelectedCaseId(null);
+        setQuantities({});
+        return;
+      }
+
+      const selectedStillExists = selectedCaseId
+        ? caseData.some((c) => c.id === selectedCaseId)
+        : false;
+
+      const nextSelectedCaseId = selectedStillExists
+        ? selectedCaseId
+        : caseData[0].id;
+
+      setSelectedCaseId(nextSelectedCaseId ?? null);
+
+      if (nextSelectedCaseId) {
+        await loadCaseItems(nextSelectedCaseId);
+      } else {
+        setQuantities({});
       }
     } catch (err) {
       console.error(err);
@@ -196,6 +217,11 @@ export default function AdminCasesPage() {
   }
 
   function handleEditCase(caseRecord: CaseRecordWithCharge) {
+    if (caseRecord.is_archived) {
+      setError("Archived cases cannot be edited unless they are unarchived.");
+      return;
+    }
+
     setEditingCaseId(caseRecord.id);
     setSelectedCaseId(caseRecord.id);
     setForm({
@@ -207,8 +233,8 @@ export default function AdminCasesPage() {
         caseRecord.target_price_cap != null
           ? Number(caseRecord.target_price_cap)
           : caseRecord.tier === "economy"
-          ? 200
-          : null,
+            ? 200
+            : null,
       member_email: caseRecord.member_email ?? "",
       finalize_deadline: caseRecord.finalize_deadline
         ? caseRecord.finalize_deadline.slice(0, 10)
@@ -254,6 +280,91 @@ export default function AdminCasesPage() {
     } catch (err) {
       console.error(err);
       setError(err instanceof Error ? err.message : "Could not delete case.");
+    }
+  }
+
+  async function handleArchiveCase(caseId: string) {
+    const caseRecord = cases.find((c) => c.id === caseId);
+    if (!caseRecord) return;
+
+    const confirmed = window.confirm(
+      `Archive "${caseRecord.quarter ?? caseRecord.title ?? "this case"}"?\n\nArchived cases will no longer appear for normal member-facing case queries.`
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setArchivingCaseId(caseId);
+      setError("");
+      setSuccess("");
+
+      const updated = await archiveCase(caseId);
+
+      if (selectedCaseId === caseId) {
+        resetForm();
+      }
+
+      if (showArchived) {
+        setCases((prev) =>
+          prev.map((c) =>
+            c.id === caseId ? ({ ...c, ...updated } as CaseRecordWithCharge) : c
+          )
+        );
+      } else {
+        const remainingCases = cases.filter((c) => c.id !== caseId);
+        setCases(remainingCases);
+
+        if (selectedCaseId === caseId) {
+          const nextCaseId = remainingCases[0]?.id ?? null;
+          setSelectedCaseId(nextCaseId);
+          if (nextCaseId) {
+            await loadCaseItems(nextCaseId);
+          } else {
+            setQuantities({});
+          }
+        }
+      }
+
+      setSuccess("Case archived.");
+    } catch (err) {
+      console.error(err);
+      setError(err instanceof Error ? err.message : "Could not archive case.");
+    } finally {
+      setArchivingCaseId(null);
+    }
+  }
+
+  async function handleUnarchiveCase(caseId: string) {
+    const caseRecord = cases.find((c) => c.id === caseId);
+    if (!caseRecord) return;
+
+    const confirmed = window.confirm(
+      `Unarchive "${caseRecord.quarter ?? caseRecord.title ?? "this case"}"?`
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setArchivingCaseId(caseId);
+      setError("");
+      setSuccess("");
+
+      const updated = await unarchiveCase(caseId);
+
+      setCases((prev) =>
+        prev.map((c) =>
+          c.id === caseId ? ({ ...c, ...updated } as CaseRecordWithCharge) : c
+        )
+      );
+
+      setSuccess("Case unarchived.");
+    } catch (err) {
+      console.error(err);
+      setError(
+        err instanceof Error ? err.message : "Could not unarchive case."
+      );
+    } finally {
+      setArchivingCaseId(null);
     }
   }
 
@@ -316,7 +427,7 @@ export default function AdminCasesPage() {
   }
 
   async function handleSaveItems() {
-    if (!selectedCaseId) return;
+    if (!selectedCaseId || !selectedCase || selectedCase.is_archived) return;
 
     try {
       setSavingItems(true);
@@ -344,6 +455,11 @@ export default function AdminCasesPage() {
 
   async function handleStatusChange(nextStatus: CaseStatus) {
     if (!selectedCaseId || !selectedCase) return;
+
+    if (selectedCase.is_archived) {
+      setError("Archived cases cannot be updated until they are unarchived.");
+      return;
+    }
 
     const labelMap: Record<CaseStatus, string> = {
       draft: "Draft",
@@ -390,6 +506,11 @@ export default function AdminCasesPage() {
 
   async function handlePublishTemplateCase() {
     if (!selectedCase) return;
+
+    if (selectedCase.is_archived) {
+      setError("Archived template cases cannot be published.");
+      return;
+    }
 
     if (selectedCase.member_email) {
       setError("Only template cases can be published to all members.");
@@ -475,6 +596,11 @@ export default function AdminCasesPage() {
   async function handleChargeCase() {
     if (!selectedCase) return;
 
+    if (selectedCase.is_archived) {
+      setError("Archived cases cannot be charged.");
+      return;
+    }
+
     const readableCaseName =
       selectedCase.quarter || selectedCase.title || "this case";
     const confirmed = window.confirm(
@@ -523,7 +649,8 @@ export default function AdminCasesPage() {
                 ...caseRecord,
                 charged: true,
                 charged_at: new Date().toISOString(),
-                square_payment_id: data.paymentId ?? caseRecord.square_payment_id,
+                square_payment_id:
+                  data.paymentId ?? caseRecord.square_payment_id,
               }
             : caseRecord
         )
@@ -571,8 +698,8 @@ export default function AdminCasesPage() {
     selectedCase?.target_price_cap != null
       ? Number(selectedCase.target_price_cap)
       : selectedCase?.tier === "economy"
-      ? 200
-      : null;
+        ? 200
+        : null;
 
   const isEconomySelectedCase = selectedCase?.tier === "economy";
   const overEconomyTarget =
@@ -582,11 +709,13 @@ export default function AdminCasesPage() {
 
   const isSelectedCaseCharged = Boolean(selectedCase?.charged);
   const isTemplateCase = Boolean(selectedCase && !selectedCase.member_email);
+  const isSelectedCaseArchived = Boolean(selectedCase?.is_archived);
 
   const canChargeSelectedCase =
     Boolean(selectedCase) &&
     !isTemplateCase &&
     !isSelectedCaseCharged &&
+    !isSelectedCaseArchived &&
     selectedCase?.status === "ready_for_pickup" &&
     selectedCaseTotalClubPrice > 0 &&
     Boolean(selectedCase?.member_email);
@@ -729,7 +858,10 @@ export default function AdminCasesPage() {
                   placeholder="Member email (leave blank for template case)"
                   value={form.member_email}
                   onChange={(e) =>
-                    setForm((prev) => ({ ...prev, member_email: e.target.value }))
+                    setForm((prev) => ({
+                      ...prev,
+                      member_email: e.target.value,
+                    }))
                   }
                 />
 
@@ -757,9 +889,21 @@ export default function AdminCasesPage() {
             </div>
 
             <div className="rounded-3xl border border-stone-200 bg-white p-6 shadow-sm">
-              <h2 className="text-xl font-semibold text-stone-800">
-                Template and One-Off Cases
-              </h2>
+              <div className="flex items-center justify-between gap-3">
+                <h2 className="text-xl font-semibold text-stone-800">
+                  Template and One-Off Cases
+                </h2>
+
+                <label className="flex items-center gap-2 text-sm text-stone-600">
+                  <input
+                    type="checkbox"
+                    checked={showArchived}
+                    onChange={(e) => setShowArchived(e.target.checked)}
+                    className="h-4 w-4 rounded border-stone-300"
+                  />
+                  Show Archived
+                </label>
+              </div>
 
               {cases.length === 0 ? (
                 <p className="mt-4 text-sm text-stone-500">No cases created yet.</p>
@@ -769,6 +913,7 @@ export default function AdminCasesPage() {
                     const isSelected = selectedCaseId === caseRecord.id;
                     const isCharged = Boolean(caseRecord.charged);
                     const isTemplate = !caseRecord.member_email;
+                    const isArchived = Boolean(caseRecord.is_archived);
 
                     return (
                       <div
@@ -777,7 +922,7 @@ export default function AdminCasesPage() {
                           isSelected
                             ? "border-stone-800 bg-stone-50"
                             : "border-stone-200 bg-white"
-                        }`}
+                        } ${isArchived ? "opacity-80" : ""}`}
                       >
                         <div className="flex items-start justify-between gap-3">
                           <div>
@@ -796,6 +941,11 @@ export default function AdminCasesPage() {
                               {isCharged ? (
                                 <span className="inline-flex rounded-full bg-emerald-100 px-3 py-1 text-xs font-medium text-emerald-800">
                                   Charged
+                                </span>
+                              ) : null}
+                              {isArchived ? (
+                                <span className="inline-flex rounded-full bg-stone-300 px-3 py-1 text-xs font-medium text-stone-800">
+                                  Archived
                                 </span>
                               ) : null}
                             </div>
@@ -826,7 +976,7 @@ export default function AdminCasesPage() {
                             ) : null}
                           </div>
 
-                          <div className="flex gap-2">
+                          <div className="flex flex-wrap gap-2">
                             <button
                               type="button"
                               onClick={() => {
@@ -839,14 +989,38 @@ export default function AdminCasesPage() {
                               <Package className="h-4 w-4" />
                             </button>
 
-                            <button
-                              type="button"
-                              onClick={() => handleEditCase(caseRecord)}
-                              className="rounded-xl border border-stone-300 p-2 text-stone-700 hover:bg-stone-50"
-                              title="Edit case"
-                            >
-                              <Pencil className="h-4 w-4" />
-                            </button>
+                            {!isArchived ? (
+                              <button
+                                type="button"
+                                onClick={() => handleEditCase(caseRecord)}
+                                className="rounded-xl border border-stone-300 p-2 text-stone-700 hover:bg-stone-50"
+                                title="Edit case"
+                              >
+                                <Pencil className="h-4 w-4" />
+                              </button>
+                            ) : null}
+
+                            {!isArchived ? (
+                              <button
+                                type="button"
+                                onClick={() => handleArchiveCase(caseRecord.id)}
+                                disabled={archivingCaseId === caseRecord.id}
+                                className="rounded-xl border border-stone-300 p-2 text-amber-700 hover:bg-amber-50 disabled:opacity-50"
+                                title="Archive case"
+                              >
+                                <Archive className="h-4 w-4" />
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => handleUnarchiveCase(caseRecord.id)}
+                                disabled={archivingCaseId === caseRecord.id}
+                                className="rounded-xl border border-stone-300 p-2 text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
+                                title="Unarchive case"
+                              >
+                                <ArchiveRestore className="h-4 w-4" />
+                              </button>
+                            )}
 
                             <button
                               type="button"
@@ -883,7 +1057,7 @@ export default function AdminCasesPage() {
                 <button
                   type="button"
                   onClick={handleSaveItems}
-                  disabled={!selectedCaseId || savingItems}
+                  disabled={!selectedCaseId || savingItems || isSelectedCaseArchived}
                   className="inline-flex items-center gap-2 rounded-2xl bg-[#263330] px-4 py-3 text-sm font-medium text-white disabled:opacity-50"
                 >
                   <Save className="h-4 w-4" />
@@ -906,6 +1080,11 @@ export default function AdminCasesPage() {
                         Card Charged
                       </span>
                     ) : null}
+                    {isSelectedCaseArchived ? (
+                      <span className="inline-flex rounded-full bg-stone-300 px-3 py-1 text-xs font-medium text-stone-800">
+                        Archived
+                      </span>
+                    ) : null}
                     <span className="text-sm text-stone-500">
                       {selectedBottleCount} / {selectedCase.case_size ?? 12} bottles selected
                     </span>
@@ -919,6 +1098,13 @@ export default function AdminCasesPage() {
                       </span>
                     ) : null}
                   </div>
+
+                  {isSelectedCaseArchived ? (
+                    <div className="mb-6 rounded-2xl border border-stone-300 bg-stone-100 px-4 py-3 text-sm text-stone-700">
+                      This case is archived. Unarchive it to edit contents, change
+                      workflow status, publish, or charge it.
+                    </div>
+                  ) : null}
 
                   {isEconomySelectedCase && selectedCaseTargetCap != null ? (
                     <div
@@ -1029,7 +1215,8 @@ export default function AdminCasesPage() {
                                     [wine.id]: e.target.value,
                                   }))
                                 }
-                                className="w-24 rounded-2xl border border-stone-300 px-3 py-2 text-sm outline-none"
+                                disabled={isSelectedCaseArchived}
+                                className="w-24 rounded-2xl border border-stone-300 px-3 py-2 text-sm outline-none disabled:bg-stone-100 disabled:text-stone-400"
                               />
                             </td>
                           </tr>
@@ -1054,7 +1241,7 @@ export default function AdminCasesPage() {
                     <button
                       type="button"
                       onClick={handlePublishTemplateCase}
-                      disabled={publishingCase}
+                      disabled={publishingCase || isSelectedCaseArchived}
                       className="inline-flex items-center justify-center gap-2 rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800 disabled:opacity-50"
                     >
                       <Copy className="h-4 w-4" />
@@ -1064,7 +1251,7 @@ export default function AdminCasesPage() {
                     <button
                       type="button"
                       onClick={() => handleStatusChange("customizing")}
-                      disabled={statusUpdating !== null}
+                      disabled={statusUpdating !== null || isSelectedCaseArchived}
                       className="inline-flex items-center justify-center gap-2 rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800 disabled:opacity-50"
                     >
                       <Send className="h-4 w-4" />
@@ -1077,7 +1264,7 @@ export default function AdminCasesPage() {
                   <button
                     type="button"
                     onClick={() => handleStatusChange("finalized")}
-                    disabled={statusUpdating !== null}
+                    disabled={statusUpdating !== null || isSelectedCaseArchived}
                     className="inline-flex items-center justify-center gap-2 rounded-2xl border border-blue-300 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-800 disabled:opacity-50"
                   >
                     <Lock className="h-4 w-4" />
@@ -1087,7 +1274,11 @@ export default function AdminCasesPage() {
                   <button
                     type="button"
                     onClick={() => handleStatusChange("ready_for_pickup")}
-                    disabled={statusUpdating !== null || isTemplateCase}
+                    disabled={
+                      statusUpdating !== null ||
+                      isTemplateCase ||
+                      isSelectedCaseArchived
+                    }
                     className="inline-flex items-center justify-center gap-2 rounded-2xl border border-green-300 bg-green-50 px-4 py-3 text-sm font-medium text-green-800 disabled:opacity-50"
                   >
                     <CheckCircle2 className="h-4 w-4" />
@@ -1099,7 +1290,11 @@ export default function AdminCasesPage() {
                   <button
                     type="button"
                     onClick={() => handleStatusChange("picked_up")}
-                    disabled={statusUpdating !== null || isTemplateCase}
+                    disabled={
+                      statusUpdating !== null ||
+                      isTemplateCase ||
+                      isSelectedCaseArchived
+                    }
                     className="inline-flex items-center justify-center gap-2 rounded-2xl border border-stone-300 bg-stone-100 px-4 py-3 text-sm font-medium text-stone-800 disabled:opacity-50"
                   >
                     <ShoppingBag className="h-4 w-4" />
@@ -1127,9 +1322,8 @@ export default function AdminCasesPage() {
                       </span>
                     </div>
 
-                    {!selectedCase.member_email ? null : null}
-
-                    {selectedCase.status !== "ready_for_pickup" ? (
+                    {selectedCase.status !== "ready_for_pickup" &&
+                    !isSelectedCaseArchived ? (
                       <div className="mb-4 rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
                         Charge is enabled after the case is marked{" "}
                         <span className="font-medium">Ready for Pickup</span>.
@@ -1139,6 +1333,12 @@ export default function AdminCasesPage() {
                     {isSelectedCaseCharged ? (
                       <div className="mb-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
                         This case has already been charged.
+                      </div>
+                    ) : null}
+
+                    {isSelectedCaseArchived ? (
+                      <div className="mb-4 rounded-2xl border border-stone-300 bg-stone-100 px-4 py-3 text-sm text-stone-700">
+                        Archived cases cannot be charged.
                       </div>
                     ) : null}
 

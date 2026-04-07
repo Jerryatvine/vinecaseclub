@@ -22,14 +22,7 @@ export type CaseRecord = {
   finalize_deadline?: string | null;
   created_at?: string;
   template_case_id?: string | null;
-};
-
-export type CaseItemRecord = {
-  id: string;
-  case_id: string;
-  wine_id: string;
-  quantity: number;
-  created_at?: string;
+  is_archived: boolean;
 };
 
 type CaseInput = {
@@ -42,12 +35,21 @@ type CaseInput = {
   member_email?: string | null;
   finalize_deadline?: string | null;
   template_case_id?: string | null;
+  is_archived?: boolean;
 };
 
 type CaseItemInput = {
   case_id: string;
   wine_id: string;
   quantity: number;
+};
+
+export type CaseItemRecord = {
+  id: string;
+  case_id: string;
+  wine_id: string;
+  quantity: number;
+  created_at?: string;
 };
 
 function getErrorMessage(error: unknown) {
@@ -80,14 +82,20 @@ function logSupabaseError(label: string, error: unknown) {
   console.error(label, getErrorMessage(error), error);
 }
 
-export async function getAllCases() {
+export async function getAllCases(includeArchived = false) {
   const supabase = createClient();
 
-  const { data, error } = await supabase
+  let query = supabase
     .from("cases")
     .select("*")
     .is("template_case_id", null)
     .order("created_at", { ascending: false });
+
+  if (!includeArchived) {
+    query = query.eq("is_archived", false);
+  }
+
+  const { data, error } = await query;
 
   if (error) {
     logSupabaseError("Error loading cases:", error);
@@ -97,15 +105,21 @@ export async function getAllCases() {
   return (data ?? []) as CaseRecord[];
 }
 
-export async function getUserCases(email: string) {
+export async function getUserCases(email: string, includeArchived = false) {
   const supabase = createClient();
   const normalizedEmail = email.trim().toLowerCase();
 
-  const { data, error } = await supabase
+  let query = supabase
     .from("cases")
     .select("*")
     .eq("member_email", normalizedEmail)
     .order("created_at", { ascending: false });
+
+  if (!includeArchived) {
+    query = query.eq("is_archived", false);
+  }
+
+  const { data, error } = await query;
 
   if (error) {
     logSupabaseError("Error loading user cases:", error);
@@ -139,6 +153,7 @@ export async function createCase(input: CaseInput) {
     ...input,
     member_email: input.member_email?.trim().toLowerCase() || null,
     template_case_id: input.template_case_id ?? null,
+    is_archived: input.is_archived ?? false,
   };
 
   const { data, error } = await supabase
@@ -166,6 +181,8 @@ export async function updateCase(id: string, input: Partial<CaseInput>) {
         : input.member_email?.trim().toLowerCase() || null,
     template_case_id:
       input.template_case_id === undefined ? undefined : input.template_case_id,
+    is_archived:
+      input.is_archived === undefined ? undefined : input.is_archived,
   };
 
   const { data, error } = await supabase
@@ -177,6 +194,42 @@ export async function updateCase(id: string, input: Partial<CaseInput>) {
 
   if (error) {
     logSupabaseError("Error updating case:", error);
+    throw new Error(getErrorMessage(error));
+  }
+
+  return data as CaseRecord;
+}
+
+export async function archiveCase(id: string) {
+  const supabase = createClient();
+
+  const { data, error } = await supabase
+    .from("cases")
+    .update({ is_archived: true })
+    .eq("id", id)
+    .select()
+    .single();
+
+  if (error) {
+    logSupabaseError("Error archiving case:", error);
+    throw new Error(getErrorMessage(error));
+  }
+
+  return data as CaseRecord;
+}
+
+export async function unarchiveCase(id: string) {
+  const supabase = createClient();
+
+  const { data, error } = await supabase
+    .from("cases")
+    .update({ is_archived: false })
+    .eq("id", id)
+    .select()
+    .single();
+
+  if (error) {
+    logSupabaseError("Error unarchiving case:", error);
     throw new Error(getErrorMessage(error));
   }
 
@@ -216,7 +269,6 @@ export async function getCaseItems(caseId: string) {
 export async function createCaseItem(input: CaseItemInput) {
   const supabase = createClient();
 
-  // 🔒 Inventory check on create
   const { data: wine, error: wineError } = await supabase
     .from("wines")
     .select("inventory_count")
@@ -254,7 +306,6 @@ export async function updateCaseItem(
 ) {
   const supabase = createClient();
 
-  // Get existing item
   const { data: existingItem, error: existingError } = await supabase
     .from("case_items")
     .select("*")
@@ -269,7 +320,6 @@ export async function updateCaseItem(
   const wineId = input.wine_id ?? existingItem.wine_id;
   const newQuantity = input.quantity ?? existingItem.quantity;
 
-  // Get inventory
   const { data: wine, error: wineError } = await supabase
     .from("wines")
     .select("inventory_count")
@@ -323,7 +373,6 @@ export async function replaceCaseItems(
 
   const positiveItems = items.filter((item) => item.quantity > 0);
 
-  // 🔒 Validate ALL items before writing
   for (const item of positiveItems) {
     const { data: wine, error } = await supabase
       .from("wines")
@@ -420,7 +469,10 @@ export async function removeCaseAndRestock(caseId: string) {
     .eq("case_id", caseId);
 
   if (deleteItemsError) {
-    logSupabaseError("Error deleting case items during case removal:", deleteItemsError);
+    logSupabaseError(
+      "Error deleting case items during case removal:",
+      deleteItemsError
+    );
     throw new Error(getErrorMessage(deleteItemsError));
   }
 
@@ -430,7 +482,10 @@ export async function removeCaseAndRestock(caseId: string) {
     .eq("id", caseId);
 
   if (deleteCaseError) {
-    logSupabaseError("Error deleting case during case removal:", deleteCaseError);
+    logSupabaseError(
+      "Error deleting case during case removal:",
+      deleteCaseError
+    );
     throw new Error(getErrorMessage(deleteCaseError));
   }
 

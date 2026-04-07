@@ -29,6 +29,7 @@ type TemplateCase = {
   finalize_deadline: string | null;
   created_at: string | null;
   member_email: string | null;
+  is_archived: boolean;
 };
 
 type CaseItemRecord = {
@@ -43,7 +44,9 @@ export async function GET(request: Request) {
   const supabase = await createClient();
 
   if (code) {
-    const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
+    const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(
+      code
+    );
 
     if (exchangeError) {
       console.error("Auth code exchange failed:", exchangeError);
@@ -131,11 +134,13 @@ export async function GET(request: Request) {
           target_price_cap,
           finalize_deadline,
           created_at,
-          member_email
+          member_email,
+          is_archived
         `
       )
       .eq("tier", member.membership_tier)
       .eq("status", "customizing")
+      .eq("is_archived", false)
       .is("member_email", null)
       .is("template_case_id", null)
       .order("created_at", { ascending: false })
@@ -148,16 +153,20 @@ export async function GET(request: Request) {
 
     const template = latestTemplate as TemplateCase | null;
 
-    if (template) {
+    if (template && !template.is_archived) {
       const { data: existingClone, error: existingCloneError } = await supabase
         .from("cases")
         .select("id")
         .eq("template_case_id", template.id)
         .eq("member_email", normalizedEmail)
+        .eq("is_archived", false)
         .maybeSingle();
 
       if (existingCloneError) {
-        console.error("Failed to check for existing member case clone:", existingCloneError);
+        console.error(
+          "Failed to check for existing member case clone:",
+          existingCloneError
+        );
       }
 
       if (!existingClone) {
@@ -182,6 +191,7 @@ export async function GET(request: Request) {
                 member_email: normalizedEmail,
                 finalize_deadline: template.finalize_deadline ?? null,
                 template_case_id: template.id,
+                is_archived: false,
               },
             ])
             .select("id")
@@ -190,11 +200,13 @@ export async function GET(request: Request) {
           if (createCaseError || !createdCase) {
             console.error("Failed to create member case clone:", createCaseError);
           } else {
-            const copiedItems = ((templateItems ?? []) as CaseItemRecord[]).map((item) => ({
-              case_id: createdCase.id,
-              wine_id: item.wine_id,
-              quantity: item.quantity,
-            }));
+            const copiedItems = ((templateItems ?? []) as CaseItemRecord[]).map(
+              (item) => ({
+                case_id: createdCase.id,
+                wine_id: item.wine_id,
+                quantity: item.quantity,
+              })
+            );
 
             if (copiedItems.length > 0) {
               const { error: insertItemsError } = await supabase
