@@ -251,6 +251,16 @@ export async function archiveCaseAsAdmin(caseId: string) {
     throw new Error(getErrorMessage(error));
   }
 
+  // Archive all member clones that were created from this template
+  const { error: cloneArchiveError } = await supabase
+    .from("cases")
+    .update({ is_archived: true })
+    .eq("template_case_id", caseId);
+
+  if (cloneArchiveError) {
+    logSupabaseError("Error archiving member clones for case:", cloneArchiveError);
+  }
+
   return data as MemberCaseSummary;
 }
 
