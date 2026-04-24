@@ -297,6 +297,15 @@ export async function createCaseItem(input: CaseItemInput) {
     throw new Error(getErrorMessage(error));
   }
 
+  const { error: inventoryError } = await supabase
+    .from("wines")
+    .update({ inventory_count: wine.inventory_count - input.quantity })
+    .eq("id", input.wine_id);
+
+  if (inventoryError) {
+    logSupabaseError("Error decrementing wine inventory:", inventoryError);
+  }
+
   return data as CaseItemRecord;
 }
 
@@ -319,6 +328,7 @@ export async function updateCaseItem(
 
   const wineId = input.wine_id ?? existingItem.wine_id;
   const newQuantity = input.quantity ?? existingItem.quantity;
+  const oldQuantity = existingItem.quantity;
 
   const { data: wine, error: wineError } = await supabase
     .from("wines")
@@ -331,7 +341,9 @@ export async function updateCaseItem(
     throw new Error(getErrorMessage(wineError));
   }
 
-  if (newQuantity > wine.inventory_count) {
+  const delta = newQuantity - oldQuantity;
+
+  if (delta > wine.inventory_count) {
     throw new Error(
       `Inventory limit reached. Only ${wine.inventory_count} bottles available.`
     );
@@ -349,17 +361,56 @@ export async function updateCaseItem(
     throw new Error(getErrorMessage(error));
   }
 
+  if (delta !== 0) {
+    const { error: inventoryError } = await supabase
+      .from("wines")
+      .update({ inventory_count: wine.inventory_count - delta })
+      .eq("id", wineId);
+
+    if (inventoryError) {
+      logSupabaseError("Error adjusting wine inventory:", inventoryError);
+    }
+  }
+
   return data as CaseItemRecord;
 }
 
 export async function deleteCaseItem(id: string) {
   const supabase = createClient();
 
+  const { data: existingItem, error: fetchError } = await supabase
+    .from("case_items")
+    .select("wine_id, quantity")
+    .eq("id", id)
+    .single();
+
+  if (fetchError || !existingItem) {
+    logSupabaseError("Error loading case item before delete:", fetchError);
+    throw new Error(getErrorMessage(fetchError));
+  }
+
   const { error } = await supabase.from("case_items").delete().eq("id", id);
 
   if (error) {
     logSupabaseError("Error deleting case item:", error);
     throw new Error(getErrorMessage(error));
+  }
+
+  const { data: wine, error: wineError } = await supabase
+    .from("wines")
+    .select("inventory_count")
+    .eq("id", existingItem.wine_id)
+    .single();
+
+  if (!wineError && wine) {
+    const { error: inventoryError } = await supabase
+      .from("wines")
+      .update({ inventory_count: wine.inventory_count + existingItem.quantity })
+      .eq("id", existingItem.wine_id);
+
+    if (inventoryError) {
+      logSupabaseError("Error restocking wine inventory:", inventoryError);
+    }
   }
 
   return true;
