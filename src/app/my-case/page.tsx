@@ -514,8 +514,6 @@ export default function MyCasePage() {
   async function handleChangeQuantity(item: CaseItem, delta: number) {
     const currentQty = item.quantity || 1;
     const newQty = currentQty + delta;
-    const wine = allWines.find((w) => w.id === item.wine_id);
-    const inventory = Number(wine?.inventory ?? 0);
 
     try {
       setUpdatingItem(item.id);
@@ -526,22 +524,10 @@ export default function MyCasePage() {
         await deleteCaseItem(item.id);
         setCaseItems((prev) => prev.filter((ci) => ci.id !== item.id));
       } else {
-        if (newQty > inventory) {
-          setError(
-            `Only ${inventory} bottle${inventory === 1 ? "" : "s"} available for ${wine?.name ?? "this wine"}.`
-          );
-          return;
-        }
-
         await updateCaseItem(item.id, { quantity: newQty });
         setCaseItems((prev) =>
           prev.map((ci) =>
-            ci.id === item.id
-              ? {
-                  ...ci,
-                  quantity: newQty,
-                }
-              : ci
+            ci.id === item.id ? { ...ci, quantity: newQty } : ci
           )
         );
       }
