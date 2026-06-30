@@ -262,7 +262,7 @@ export async function publishTemplateToAllMembers(templateId: string) {
 
   const { data: wines, error: winesError } = await supabase
     .from("wines")
-    .select("id, name, inventory")
+    .select("id, name, inventory_count")
     .in("id", wineIds);
 
   if (winesError) {
@@ -281,7 +281,7 @@ export async function publishTemplateToAllMembers(templateId: string) {
 
   for (const wine of wines ?? []) {
     const needed = requiredByWine.get(wine.id) ?? 0;
-    const available = Number(wine.inventory ?? 0);
+    const available = Number(wine.inventory_count ?? 0);
 
     if (needed > available) {
       throw new Error(
@@ -350,13 +350,12 @@ export async function publishTemplateToAllMembers(templateId: string) {
 
   for (const wine of wines ?? []) {
     const needed = requiredByWine.get(wine.id) ?? 0;
-    const available = Number(wine.inventory ?? 0);
-    const newInventory = available - needed;
+    if (needed <= 0) continue;
 
-    const { error: inventoryUpdateError } = await supabase
-      .from("wines")
-      .update({ inventory: newInventory })
-      .eq("id", wine.id);
+    const { error: inventoryUpdateError } = await supabase.rpc(
+      "decrement_wine_inventory",
+      { p_wine_id: wine.id, p_quantity: needed }
+    );
 
     if (inventoryUpdateError) {
       console.error("Error updating wine inventory:", inventoryUpdateError);

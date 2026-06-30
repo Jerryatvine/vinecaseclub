@@ -269,20 +269,17 @@ export async function getCaseItems(caseId: string) {
 export async function createCaseItem(input: CaseItemInput) {
   const supabase = createClient();
 
-  const { data: wine, error: wineError } = await supabase
-    .from("wines")
-    .select("inventory_count")
-    .eq("id", input.wine_id)
-    .single();
+  const { error: inventoryError } = await supabase.rpc(
+    "decrement_wine_inventory",
+    { p_wine_id: input.wine_id, p_quantity: input.quantity }
+  );
 
-  if (wineError || !wine) {
-    logSupabaseError("Error loading wine inventory:", wineError);
-    throw new Error(getErrorMessage(wineError));
-  }
-
-  if (input.quantity > wine.inventory_count) {
+  if (inventoryError) {
+    logSupabaseError("Error decrementing wine inventory:", inventoryError);
     throw new Error(
-      `Inventory limit reached. Only ${wine.inventory_count} bottles available.`
+      inventoryError.message.includes("Insufficient inventory")
+        ? inventoryError.message
+        : "Failed to reserve inventory. Please try again."
     );
   }
 
@@ -294,16 +291,12 @@ export async function createCaseItem(input: CaseItemInput) {
 
   if (error) {
     logSupabaseError("Error creating case item:", error);
+    // Roll back the inventory decrement
+    await supabase.rpc("increment_wine_inventory", {
+      p_wine_id: input.wine_id,
+      p_quantity: input.quantity,
+    });
     throw new Error(getErrorMessage(error));
-  }
-
-  const { error: inventoryError } = await supabase
-    .from("wines")
-    .update({ inventory_count: wine.inventory_count - input.quantity })
-    .eq("id", input.wine_id);
-
-  if (inventoryError) {
-    logSupabaseError("Error decrementing wine inventory:", inventoryError);
   }
 
   return data as CaseItemRecord;
@@ -329,24 +322,27 @@ export async function updateCaseItem(
   const wineId = input.wine_id ?? existingItem.wine_id;
   const newQuantity = input.quantity ?? existingItem.quantity;
   const oldQuantity = existingItem.quantity;
-
-  const { data: wine, error: wineError } = await supabase
-    .from("wines")
-    .select("inventory_count")
-    .eq("id", wineId)
-    .single();
-
-  if (wineError || !wine) {
-    logSupabaseError("Error loading wine inventory:", wineError);
-    throw new Error(getErrorMessage(wineError));
-  }
-
   const delta = newQuantity - oldQuantity;
 
-  if (delta > wine.inventory_count) {
-    throw new Error(
-      `Inventory limit reached. Only ${wine.inventory_count} bottles available.`
+  if (delta > 0) {
+    const { error: inventoryError } = await supabase.rpc(
+      "decrement_wine_inventory",
+      { p_wine_id: wineId, p_quantity: delta }
     );
+
+    if (inventoryError) {
+      logSupabaseError("Error decrementing wine inventory:", inventoryError);
+      throw new Error(
+        inventoryError.message.includes("Insufficient inventory")
+          ? inventoryError.message
+          : "Failed to reserve inventory. Please try again."
+      );
+    }
+  } else if (delta < 0) {
+    await supabase.rpc("increment_wine_inventory", {
+      p_wine_id: wineId,
+      p_quantity: -delta,
+    });
   }
 
   const { data, error } = await supabase
@@ -358,18 +354,19 @@ export async function updateCaseItem(
 
   if (error) {
     logSupabaseError("Error updating case item:", error);
-    throw new Error(getErrorMessage(error));
-  }
-
-  if (delta !== 0) {
-    const { error: inventoryError } = await supabase
-      .from("wines")
-      .update({ inventory_count: wine.inventory_count - delta })
-      .eq("id", wineId);
-
-    if (inventoryError) {
-      logSupabaseError("Error adjusting wine inventory:", inventoryError);
+    // Roll back inventory change
+    if (delta > 0) {
+      await supabase.rpc("increment_wine_inventory", {
+        p_wine_id: wineId,
+        p_quantity: delta,
+      });
+    } else if (delta < 0) {
+      await supabase.rpc("decrement_wine_inventory", {
+        p_wine_id: wineId,
+        p_quantity: -delta,
+      });
     }
+    throw new Error(getErrorMessage(error));
   }
 
   return data as CaseItemRecord;
@@ -396,21 +393,13 @@ export async function deleteCaseItem(id: string) {
     throw new Error(getErrorMessage(error));
   }
 
-  const { data: wine, error: wineError } = await supabase
-    .from("wines")
-    .select("inventory_count")
-    .eq("id", existingItem.wine_id)
-    .single();
+  const { error: inventoryError } = await supabase.rpc(
+    "increment_wine_inventory",
+    { p_wine_id: existingItem.wine_id, p_quantity: existingItem.quantity }
+  );
 
-  if (!wineError && wine) {
-    const { error: inventoryError } = await supabase
-      .from("wines")
-      .update({ inventory_count: wine.inventory_count + existingItem.quantity })
-      .eq("id", existingItem.wine_id);
-
-    if (inventoryError) {
-      logSupabaseError("Error restocking wine inventory:", inventoryError);
-    }
+  if (inventoryError) {
+    logSupabaseError("Error restocking wine inventory:", inventoryError);
   }
 
   return true;
@@ -424,23 +413,70 @@ export async function replaceCaseItems(
 
   const positiveItems = items.filter((item) => item.quantity > 0);
 
+  // Fetch existing items so we can compute per-wine deltas and restock removed wines
+  const { data: existingItems, error: existingError } = await supabase
+    .from("case_items")
+    .select("wine_id, quantity")
+    .eq("case_id", caseId);
+
+  if (existingError) {
+    logSupabaseError("Error loading existing case items:", existingError);
+    throw new Error(getErrorMessage(existingError));
+  }
+
+  // Build maps: existing quantities and new quantities keyed by wine_id
+  const existingMap = new Map<string, number>();
+  for (const item of existingItems ?? []) {
+    existingMap.set(item.wine_id, (existingMap.get(item.wine_id) ?? 0) + item.quantity);
+  }
+  const newMap = new Map<string, number>();
   for (const item of positiveItems) {
-    const { data: wine, error } = await supabase
-      .from("wines")
-      .select("inventory_count")
-      .eq("id", item.wine_id)
-      .single();
+    newMap.set(item.wine_id, (newMap.get(item.wine_id) ?? 0) + item.quantity);
+  }
 
-    if (error || !wine) {
-      logSupabaseError("Error loading wine inventory:", error);
-      throw new Error(getErrorMessage(error));
-    }
+  // Collect all wine_ids involved
+  const allWineIds = new Set([...existingMap.keys(), ...newMap.keys()]);
 
-    if (item.quantity > wine.inventory_count) {
+  // Compute deltas; restock wines being removed/reduced, reserve for wines being added/increased
+  const decrements: Array<{ wine_id: string; quantity: number }> = [];
+  const increments: Array<{ wine_id: string; quantity: number }> = [];
+
+  for (const wineId of allWineIds) {
+    const oldQty = existingMap.get(wineId) ?? 0;
+    const newQty = newMap.get(wineId) ?? 0;
+    const delta = newQty - oldQty;
+    if (delta > 0) decrements.push({ wine_id: wineId, quantity: delta });
+    else if (delta < 0) increments.push({ wine_id: wineId, quantity: -delta });
+  }
+
+  // Apply inventory changes atomically per wine; check availability before proceeding
+  for (const { wine_id, quantity } of decrements) {
+    const { error: inventoryError } = await supabase.rpc(
+      "decrement_wine_inventory",
+      { p_wine_id: wine_id, p_quantity: quantity }
+    );
+    if (inventoryError) {
+      logSupabaseError("Error decrementing wine inventory:", inventoryError);
+      // Roll back any decrements already applied
+      for (const applied of decrements.slice(0, decrements.indexOf({ wine_id, quantity }))) {
+        await supabase.rpc("increment_wine_inventory", {
+          p_wine_id: applied.wine_id,
+          p_quantity: applied.quantity,
+        });
+      }
       throw new Error(
-        `Inventory limit reached for wine ${item.wine_id}. Max ${wine.inventory_count}`
+        inventoryError.message.includes("Insufficient inventory")
+          ? inventoryError.message
+          : "Failed to reserve inventory. Please try again."
       );
     }
+  }
+
+  for (const { wine_id, quantity } of increments) {
+    await supabase.rpc("increment_wine_inventory", {
+      p_wine_id: wine_id,
+      p_quantity: quantity,
+    });
   }
 
   const { error: deleteError } = await supabase
@@ -488,29 +524,14 @@ export async function removeCaseAndRestock(caseId: string) {
       continue;
     }
 
-    const { data: wine, error: wineError } = await supabase
-      .from("wines")
-      .select("inventory_count")
-      .eq("id", item.wine_id)
-      .single();
+    const { error: inventoryError } = await supabase.rpc(
+      "increment_wine_inventory",
+      { p_wine_id: item.wine_id, p_quantity: quantityToReturn }
+    );
 
-    if (wineError || !wine) {
-      logSupabaseError("Error loading wine inventory for restock:", wineError);
-      throw new Error(getErrorMessage(wineError));
-    }
-
-    const currentInventory = Number(wine.inventory_count ?? 0);
-
-    const { error: updateWineError } = await supabase
-      .from("wines")
-      .update({
-        inventory_count: currentInventory + quantityToReturn,
-      })
-      .eq("id", item.wine_id);
-
-    if (updateWineError) {
-      logSupabaseError("Error restocking wine inventory:", updateWineError);
-      throw new Error(getErrorMessage(updateWineError));
+    if (inventoryError) {
+      logSupabaseError("Error restocking wine inventory:", inventoryError);
+      throw new Error(getErrorMessage(inventoryError));
     }
   }
 
