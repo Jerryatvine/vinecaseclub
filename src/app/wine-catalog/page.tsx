@@ -137,7 +137,7 @@ function WineDetailModal({
             <img
               src={wine.image_url}
               alt={wine.name}
-              className="h-80 w-full object-cover"
+              className="h-80 w-full object-contain"
             />
           ) : (
             <div className="flex h-80 items-center justify-center text-stone-400">
