@@ -43,6 +43,7 @@ type WineItem = {
   image_url?: string | null;
   available_for_club?: boolean | null;
   club_price?: number | null;
+  inventory?: number | null;
 };
 
 type CaseRecordWithCharge = CaseRecord & {
@@ -1151,6 +1152,7 @@ export default function AdminCasesPage() {
                         <th className="px-3 py-3 font-medium">Type</th>
                         <th className="px-3 py-3 font-medium">Region</th>
                         <th className="px-3 py-3 font-medium">Club Price</th>
+                        <th className="px-3 py-3 font-medium">In Stock</th>
                         <th className="px-3 py-3 font-medium">Quantity</th>
                       </tr>
                     </thead>
@@ -1158,7 +1160,7 @@ export default function AdminCasesPage() {
                       {clubWines.length === 0 ? (
                         <tr>
                           <td
-                            colSpan={5}
+                            colSpan={6}
                             className="px-3 py-8 text-center text-stone-500"
                           >
                             No club-available wines found.
@@ -1202,6 +1204,10 @@ export default function AdminCasesPage() {
 
                             <td className="px-3 py-4 text-stone-700">
                               {formatMoney(Number(wine.club_price ?? 0))}
+                            </td>
+
+                            <td className="px-3 py-4 text-stone-700">
+                              {Number(wine.inventory ?? 0)}
                             </td>
 
                             <td className="px-3 py-4">
