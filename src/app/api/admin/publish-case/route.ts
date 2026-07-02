@@ -243,6 +243,30 @@ export async function POST(req: Request) {
       createdCount += 1;
     }
 
+    // Decrement inventory for each wine by quantity * number of cases actually created
+    if (createdCount > 0 && typedItems.length > 0) {
+      const requiredByWine = new Map<string, number>();
+      for (const item of typedItems) {
+        const current = requiredByWine.get(item.wine_id) ?? 0;
+        requiredByWine.set(item.wine_id, current + item.quantity * createdCount);
+      }
+
+      for (const [wineId, needed] of requiredByWine.entries()) {
+        const { error: inventoryError } = await supabaseAdmin.rpc(
+          "decrement_wine_inventory",
+          { p_wine_id: wineId, p_quantity: needed }
+        );
+
+        if (inventoryError) {
+          console.error("Error decrementing inventory for wine", wineId, inventoryError);
+          return NextResponse.json(
+            { error: `Failed to update inventory for wine ${wineId}.` },
+            { status: 500 }
+          );
+        }
+      }
+    }
+
     const { error: updateTemplateError } = await supabaseAdmin
       .from("cases")
       .update({ status: "customizing" })
